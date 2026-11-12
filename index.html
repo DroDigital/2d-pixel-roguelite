@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Emberspire</title>
+<meta name="description" content="A pixel art roguelite brawler. Climb the spire as a hollow vessel with an ember for a heart.">
+<meta name="theme-color" content="#07060b">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #07060b; overflow: hidden; touch-action: none; }
+  body { display: grid; place-items: center; font-family: ui-monospace, Menlo, Consolas, monospace; color: #cfc8ff; }
+  #game { image-rendering: pixelated; image-rendering: crisp-edges; display: block; background: #07060b; outline: none; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; letter-spacing: 0.3em; color: #ff9a4a; }
+  #touch { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
+  #touch .stick { position: absolute; left: 4vw; bottom: 6vh; width: 120px; height: 120px; border-radius: 50%; background: #ffffff10; border: 2px solid #ffffff22; pointer-events: auto; }
+  #touch .knob { position: absolute; left: 36px; top: 36px; width: 48px; height: 48px; border-radius: 50%; background: #ff9a4a55; border: 2px solid #ff9a4a99; }
+  #touch .btns { position: absolute; right: 3vw; bottom: 5vh; display: grid; grid-template-columns: repeat(2, 64px); gap: 10px; pointer-events: auto; }
+  #touch button { width: 64px; height: 64px; border-radius: 50%; border: 2px solid #ffffff33; background: #ffffff14; color: #fff; font: bold 12px ui-monospace, monospace; }
+  #touch button.small { height: 36px; border-radius: 18px; }
+  #touch button:active { background: #ff9a4a66; }
+</style>
+</head>
+<body>
+<canvas id="game" width="320" height="180" tabindex="0"></canvas>
+<div id="boot">KINDLING THE EMBER…</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
