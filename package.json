@@ -1,15 +1,128 @@
 {
   "name": "emberspire",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "A 2.5D pixel art roguelite brawler built on the pixelfx effects library.",
   "type": "module",
   "scripts": {
     "dev": "node tools/serve.mjs",
     "build": "node tools/build.mjs",
-    "test": "node tools/smoke.mjs"
+    "test": "node tools/smoke.mjs",
+    "bench": "node tools/smoke.mjs \"?bench=20\" bench.png \"[[\\\"wait\\\",25000],[\\\"eval\\\",\\\"JSON.stringify(window.BENCH)\\\"]]\"",
+    "icon": "node tools/icon.mjs",
+    "desktop": "npm run build && electron .",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never"
   },
   "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
     "esbuild": "0.25.10"
+  },
+  "author": "DroDigital",
+  "homepage": "https://github.com/DroDigital/2d-pixel-roguelite",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.drodigital.emberspire",
+    "productName": "Emberspire",
+    "copyright": "Emberspire. Effects: pixelfx (MIT) by Patch and Hugo Duprez.",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop/icons"
+    },
+    "files": [
+      "dist/index.html",
+      "dist/game.js",
+      "dist/PIXELFX-LICENSE.txt",
+      "desktop/**",
+      "package.json"
+    ],
+    "asar": true,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.action-games",
+      "icon": "desktop/icons/icon.png",
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "Emberspire"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "desktop/icons/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Emberspire"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Game",
+      "icon": "desktop/icons/icon.png",
+      "synopsis": "A pixel art roguelite brawler",
+      "maintainer": "DroDigital",
+      "executableArgs": [
+        "--no-sandbox"
+      ]
+    }
   }
 }

@@ -13,9 +13,27 @@ import { ELEM_PAL, ELEM_NAME, BOONS } from "./boons.js";
 import { makeBoss } from "./bosses.js";
 import { applyStatus } from "./combat.js";
 import { bake } from "../engine/bake.js";
+import { pools } from "../engine/workers.js";
 
 const HOLY_FIRE = ["#2a1c08", "#5a3e10", "#9a6c18", "#d8a428", "#ffd84a", "#fff09a", "#fffbe6", "#ffffff"];
 export const ROOMS_PER_BIOME = 5;
+
+/** Every looping effect a realm will stamp: its critters, decor, doors and pickups (for baking ahead of time). */
+export function realmBakes(B) {
+  const list = [];
+  for (const id of new Set([...B.a, ...B.b])) if (ENEMIES[id].type === "critter") list.push([ENEMIES[id].fx, ENEMIES[id].opts ?? {}, 24]);
+  B.decor({ addDecor: (id, x, y, o = {}, s = {}) => list.push([id, o, s.fps ?? 20]) });
+  list.push(["arcane/portal", { width: 14, height: 26, palette: B.door }, 16]);
+  for (const [id, o] of [["pickups/coin-spin", {}], ["pickups/xp-orb", {}], ["pickups/gem-spin", { palette: PAL.fire }], ["pickups/heart-pickup", {}], ["pickups/power-star", { palette: PAL.gold }]]) list.push([id, o, 20]);
+  for (const e of Object.values(ELEM_PAL)) list.push(["pickups/power-star", { palette: e }, 20]);
+  return list;
+}
+/** Bake every realm in the background, nearest first, while the player is still at camp. */
+export function prebakeAll(from = 0) {
+  const P = pools.current;
+  if (!P) return;
+  for (let i = from; i < BIOMES.length; i++) P.prebake(realmBakes(BIOMES[i]));
+}
 
 export const BIOMES = [
   {
@@ -148,8 +166,7 @@ export class Room {
     PAINTERS[B.paint](G.screen.bg, run.biome * 7 + run.room * 13 + 1);
     B.decor(w);
     // bake what this realm will need now, while the transition covers the screen
-    for (const id of new Set([...B.a, ...B.b])) if (ENEMIES[id].type === "critter") bake(ENEMIES[id].fx, ENEMIES[id].opts ?? {}, 24);
-    for (const [id, o] of [["pickups/coin-spin", {}], ["pickups/xp-orb", {}], ["pickups/gem-spin", { palette: PAL.fire }], ["pickups/heart-pickup", {}]]) bake(id, o, 20);
+    if (!pools.current) for (const [id, o, fps] of realmBakes(B)) bake(id, o, fps);
     for (const [id, o] of B.weather(this.type)) w.addWeather(id, o);
     w.player = w.add(player);
     player.x = 40;

@@ -11,13 +11,14 @@ import { Hud } from "./hud.js";
 import { Player } from "./player.js";
 import { CLASSES } from "./classes.js";
 import { Run } from "./run.js";
-import { Room, BIOMES, ROOMS_PER_BIOME } from "./rooms.js";
+import { Room, BIOMES, ROOMS_PER_BIOME, prebakeAll } from "./rooms.js";
 import { Ent } from "./entity.js";
 import { Interactable, Door } from "./props.js";
 import { C, text, para, panel } from "./ui.js";
 import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex } from "./menus.js";
 import { BOONS } from "./boons.js";
 import { damage, kill, applyStatus } from "./combat.js";
+import { Bench, seedRandom } from "./bench.js";
 
 Codex.prototype.fullscreen = true;
 
@@ -67,6 +68,11 @@ G.dbgBlit = (f, d) => blit(f, d.b, d.x, d.y, 1, {});
 
 export function boot(params) {
   G.hud = new Hud();
+  prebakeAll();
+  if (params.has("bench")) {
+    seedRandom(+(params.get("seed") ?? 1234567));
+    return director.set(new Bench(GameScene, +(params.get("bench") || 20)));
+  }
   if (params.has("sandbox")) return director.set(new GameScene(params.get("class") ?? "knight", { biome: +(params.get("biome") ?? 0), room: params.get("room") }));
   if (params.has("hub")) return director.set(new HubScene());
   director.set(new TitleScene());
@@ -99,6 +105,7 @@ class TitleScene {
       { label: "HOW TO PLAY", act: () => (this.overlay = new Controls(() => (this.overlay = null))) },
       { label: "CODEX", act: () => (this.overlay = new Codex(() => { this.overlay = null; PAINTERS.title(G.screen.bg); })) },
       { label: "OPTIONS", act: () => (this.overlay = optionsMenu(() => (this.overlay = null))) },
+      ...(window.desktop ? [{ label: "QUIT", act: () => window.desktop.quit() }] : []),
     ], { w: 130 });
   }
   update(dt) {

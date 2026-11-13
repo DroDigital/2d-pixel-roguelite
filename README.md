@@ -27,6 +27,43 @@ No build step is needed to play locally: `index.html` loads the ES modules direc
 
 Touch screens get a thumbstick and buttons.
 
+## Desktop (macOS, Windows, Linux)
+
+The desktop app is an Electron shell around the same game, with the GPU and every CPU core put to work:
+
+```bash
+npm run desktop       # run it from source
+npm run dist:linux    # release/: AppImage, deb, tar.gz
+npm run dist:win      # release/: NSIS installer, portable .exe, zip (best built on Windows)
+npm run dist:mac      # release/: universal .dmg and zip (must be built on macOS)
+```
+
+The **Desktop builds** workflow (`.github/workflows/desktop.yml`) builds all three on their own runners for every
+pull request that touches the game, uploading the packages as workflow artifacts; pushing a tag like `v1.1.0`
+attaches them to a GitHub release. Builds are unsigned: on macOS, right-click the app and choose Open the first time;
+on Windows, SmartScreen may ask you to confirm.
+
+Launch flags: `--fullscreen`, `--windowed`, `--renderer=2d|webgl2`, `--workers=0`, `--software` (no GPU),
+`--bench=20`. F11 or Alt+Enter toggles fullscreen.
+
+## Performance
+
+Everything heavy runs where the hardware is:
+
+- **Every core.** A pool of worker threads (one per spare core, up to 8) runs the big pixelfx effects
+  (explosions, weather, large spells, screen transitions) and bakes looping effects into sprite frames. The main
+  thread only stamps the pixels each effect touched, which come back as sparse lists in transferred buffers. A busy
+  worker gets a larger step next time, so a heavy moment lowers an effect's frame rate, never the game's.
+- **The GPU.** A WebGL2 presenter composites the world, its light, the backdrop and the HUD in one shader at the
+  display's native resolution, with shake, flashes, an optional glow (bloom of the light buffer) and scanlines. On a
+  software GL driver it steps aside for the 2D path, which is faster there.
+- **Tight loops.** Stamping is integer math with no per-pixel calls; every realm's sprites are baked in the background
+  at boot, so rooms don't hitch.
+
+`?bench=20` (or `npm run bench`) runs a seeded stress fight (twelve foes, fog and rain, ultimates and big explosions)
+and reports main-thread time per frame. On a 4-core machine without a GPU, main-thread time per frame went from
+about 100 ms before these changes to about 15 ms (from about 10 fps to about 55 fps under that load).
+
 ## The game
 
 - **Six vessels**, each fighting with pixelfx's acted moves (wind-up, freeze on contact, recovery): the Knight
@@ -55,7 +92,10 @@ Touch screens get a thumbstick and buttons.
   all sound and music, and saves.
 - `src/game/`: combat, moves performed from pixelfx acts (`perform.js`), the classes, enemies, bosses, boons, rooms,
   procedurally painted backdrops (`art.js`), HUD, menus and scenes.
-- `tools/smoke.mjs` and `tools/autoplay.mjs` drive the game in headless Chromium (Playwright) for testing.
+- `src/engine/workers.js` and `fxworker.js`: the multi-core effect pool; `gl.js`: the GPU presenter.
+- `desktop/`: the Electron main process, preload bridge and icon; `tools/icon.mjs` draws the icon with pixelfx.
+- `tools/smoke.mjs`, `tools/autoplay.mjs` and `tools/desktop-smoke.mjs` drive the game (and the desktop app) in
+  headless Chromium and Electron through Playwright for testing.
 
 ## Credits
 

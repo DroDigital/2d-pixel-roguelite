@@ -8,12 +8,17 @@ import { markSeen, onSeen } from "./engine/pfx.js";
 import { G } from "./game/ctx.js";
 import { boot as bootScenes } from "./game/scenes.js";
 import { setupTouch } from "./game/touch.js";
+import { startPool, pools } from "./engine/workers.js";
 
 const canvas = document.getElementById("game");
-G.screen = new Screen(canvas);
-G.input = new Input();
-G.audio = new Audio();
+const params0 = new URLSearchParams(location.search);
+// every spare core runs effects; ?workers=0 turns the pool off
+if (params0.get("workers") !== "0") G.workers = pools.current = startPool();
 G.save = loadSave();
+G.screen = new Screen(canvas, { renderer: params0.get("renderer") ?? G.save.settings.renderer, glow: G.save.settings.glow ?? true, scanlines: G.save.settings.scanlines });
+G.input = new Input();
+window.desktop?.gpu().then((n) => (G.gpuName = n)).catch(() => {});
+G.audio = new Audio();
 G.screen.pixelPerfect = G.save.settings.pixelPerfect;
 G.screen.fit();
 Object.assign(G.audio.vol, { master: G.save.settings.master, sfx: G.save.settings.sfx, music: G.save.settings.music });
@@ -35,9 +40,9 @@ const unlock = () => G.audio.unlock();
 addEventListener("keydown", unlock);
 addEventListener("pointerdown", unlock);
 addEventListener("touchstart", unlock);
-setupTouch(canvas);
+setupTouch(G.screen.canvas);
 // a click on the game confirms, for mouse players in menus
-canvas.addEventListener("mousedown", () => {
+G.screen.canvas.addEventListener("mousedown", () => {
   G.input.touch.confirm = true;
   setTimeout(() => (G.input.touch.confirm = false), 60);
 });
@@ -49,6 +54,7 @@ bootScenes(params);
 const STEP = 1 / 60;
 let last = performance.now(), acc = 0, fpsT = 0, fpsN = 0;
 function frame(now) {
+  const t0 = performance.now();
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   acc += dt;
@@ -68,10 +74,12 @@ function frame(now) {
     steps++;
   }
   if (steps === 4) acc = 0;
+  G.workers?.flush();
   G.screen.begin();
   G.director.draw();
   G.screen.present();
   G.frame++;
+  G.scene?.sample?.(performance.now() - t0);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -139,13 +139,17 @@ export function optionsMenu(onBack) {
     A.applyVolume();
     persist();
   };
+  S.glow ??= true;
   const tog = (label, k, after) => ({ label, value: () => (S[k] ? "ON" : "OFF"), act: () => { S[k] = !S[k]; after?.(); persist(); }, left: () => { S[k] = !S[k]; after?.(); persist(); }, right: () => { S[k] = !S[k]; after?.(); persist(); } });
   const m = new ListMenu("OPTIONS", [
     vol("master"), vol("music"), vol("sfx"),
     { label: "SCREEN SHAKE", value: () => Math.round(S.shake * 100) + "%", left: () => (S.shake = Math.max(0, S.shake - 0.25), persist()), right: () => (S.shake = Math.min(1.5, S.shake + 0.25), persist()), act: () => (S.shake = S.shake >= 1.5 ? 0 : S.shake + 0.25, persist()) },
     tog("LOW EFFECTS", "lowfx"),
     tog("PIXEL PERFECT", "pixelPerfect", () => { G.screen.pixelPerfect = S.pixelPerfect; G.screen.fit(); }),
-    { label: "FULLSCREEN", act: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()) },
+    ...(G.screen.gl ? [tog("GLOW", "glow", () => (G.screen.glow = S.glow)), tog("SCANLINES", "scanlines", () => (G.screen.scanlines = S.scanlines))] : []),
+    { label: "RENDERER", value: () => `${G.screen.kind.toUpperCase()}${G.workers ? ` + ${G.workers.size + 1} CORES` : ""}` },
+    ...(G.gpuName ? [{ label: "GPU", value: () => G.gpuName.slice(0, 26).toUpperCase() }] : []),
+    { label: "FULLSCREEN", act: () => (window.desktop ? window.desktop.toggleFullscreen() : document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()) },
     { label: "BACK", act: onBack },
   ], { onBack, w: 170 });
   return m;

@@ -2,16 +2,36 @@
 // with crisp pixels. The world's background is a Uint32Array the room paints once.
 
 import { createFrame, clearFrame, composite } from "./pfx.js";
+import { GLPresenter } from "./gl.js";
 
 export const W = 320, H = 180;
 
 export class Screen {
-  constructor(canvas) {
+  constructor(canvas, o = {}) {
     this.canvas = canvas;
     canvas.width = W;
     canvas.height = H;
-    this.ctx = canvas.getContext("2d", { alpha: false });
-    this.img = this.ctx.createImageData(W, H);
+    // the GPU composites when it can; the 2D canvas is the fallback
+    if (o.renderer !== "2d")
+      try {
+        this.gl = new GLPresenter(canvas, W, H, o.renderer === "webgl2");
+        this.kind = "webgl2";
+      } catch (e) {
+        console.info("WebGL2 not used, compositing in 2D:", e.message);
+      }
+    if (!this.gl) {
+      // a canvas that tried WebGL can't switch to 2D: start over with a fresh one
+      if (o.renderer !== "2d") {
+        const fresh = canvas.cloneNode(false);
+        canvas.replaceWith(fresh);
+        this.canvas = canvas = fresh;
+      }
+      this.ctx = canvas.getContext("2d", { alpha: false });
+      this.img = this.ctx.createImageData(W, H);
+      this.kind = "canvas2d";
+    }
+    this.glow = o.glow ?? true;
+    this.scanlines = !!o.scanlines;
     this.frame = createFrame(W, H);
     this.hud = createFrame(W, H);
     this.bg = new Uint32Array(W * H).fill(0xff100c14);
@@ -26,14 +46,22 @@ export class Screen {
   fit() {
     const k = Math.min(innerWidth / W, innerHeight / H);
     const s = this.pixelPerfect && k >= 2 ? Math.floor(k) : k;
-    this.canvas.style.width = `${Math.floor(W * s)}px`;
-    this.canvas.style.height = `${Math.floor(H * s)}px`;
+    const cw = Math.floor(W * s), ch = Math.floor(H * s);
+    this.canvas.style.width = `${cw}px`;
+    this.canvas.style.height = `${ch}px`;
+    if (this.gl) {
+      // render at the display's own pixels, so every game pixel lands crisp
+      const d = Math.min(window.devicePixelRatio || 1, 3);
+      this.canvas.width = Math.min(3840, Math.round(cw * d));
+      this.canvas.height = Math.min(2160, Math.round(ch * d));
+    }
   }
   begin() {
     clearFrame(this.frame);
     clearFrame(this.hud);
   }
   present() {
+    if (this.gl) return this.gl.present(this);
     const out = this.img.data;
     composite(this.frame, out, this.bg);
     if (this.dim > 0) {

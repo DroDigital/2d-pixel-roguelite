@@ -3,6 +3,7 @@
 // HUD frame. An effect can follow an entity, run faster or slower, and is dropped when it's done.
 
 import { createFx, fxMod } from "./pfx.js";
+import { pools } from "./workers.js";
 
 export class FxManager {
   constructor() {
@@ -22,7 +23,9 @@ export class FxManager {
     if (prio < 2 && this.list.length >= this.budget * (prio === 0 ? 0.6 : 1)) return null;
     if (this.low && prio === 0) return null;
     const mod = fxMod(id);
-    const inst = createFx(mod, { ...opts, x, y, flip: !!s.flip, angle: s.angle ?? 0 });
+    const o = { ...opts, x, y, flip: !!s.flip, angle: s.angle ?? 0 }, P = pools.current;
+    // heavy effects run on another core when there's a worker pool; light ones stay here
+    const inst = P && !s.local && P.worthy(mod, o) ? P.spawn(id, o, mod.meta.size[0] >= 320) : createFx(mod, o);
     const e = {
       id, mod, inst, layer: s.layer ?? "world", follow: s.follow ?? null, ox: s.ox ?? 0, oy: s.oy ?? 0,
       depth: s.depth ?? y, dz: s.dz ?? 0, speed: s.speed ?? 1, life: s.life ?? Infinity, age: 0, dead: false,
