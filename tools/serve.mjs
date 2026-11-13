@@ -1,8 +1,9 @@
 // A tiny static server for development: node tools/serve.mjs [port]
+import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname, normalize } from "node:path";
-const ROOT = new URL("..", import.meta.url).pathname, port = +(process.argv[2] ?? 8080);
+const ROOT = fileURLToPath(new URL("..", import.meta.url)), port = +(process.argv[2] ?? 8080);
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".json": "application/json", ".woff2": "font/woff2" };
 createServer(async (req, res) => {
   let path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");

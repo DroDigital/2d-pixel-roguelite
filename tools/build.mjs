@@ -1,7 +1,8 @@
 // Build: bundle the game into dist/ (index.html + game.js), plus a single self-contained dist/emberspire.html.
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 await mkdir(ROOT + "dist", { recursive: true });
 // the effects worker is bundled first and carried inside the game as source, so even the single-file build can spawn it
 const wr = await build({ entryPoints: [ROOT + "src/engine/fxworker.js"], bundle: true, minify: true, format: "iife", target: "es2020", write: false, legalComments: "none" });

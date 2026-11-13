@@ -1,11 +1,12 @@
 // The app icon, drawn with pixelfx like everything else: the spire under a night sky with its ember burning on top,
 // 64 x 64 pixels scaled up crisp to 1024. Writes desktop/icons/icon.png (electron-builder makes .icns and .ico from it).
+import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { createFrame, createFx, composite, hex, mix, PAL } from "../vendor/pixelfx/core/index.js";
 import * as flame from "../vendor/pixelfx/fx/fire/spirit-flame.js";
 
-const N = 64, K = 16, ROOT = new URL("..", import.meta.url).pathname;
+const N = 64, K = 16, ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 const sky = ["#0a0818", "#140e28", "#21163a", "#2e1e4a", "#4a2a5a", "#6a3450"].map(hex);
 const bg = new Uint32Array(N * N);
