@@ -6,10 +6,16 @@ import { createFx, createFrame, clearFrame, fxMod, mix } from "./pfx.js";
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 const cache = new Map();
+export const bakeKey = (id, opts = {}, fps = 24) => id + "|" + JSON.stringify(opts) + "|" + fps;
+/** A bake done elsewhere (a worker) joins the cache. */
+export function insertBaked(key, b) {
+  if (!cache.has(key)) cache.set(key, b);
+}
+insertBaked.has = (key) => cache.has(key);
 
 /** Bake effect `id` with options at `fps`. Loops bake one period; one-shots bake their whole life. */
 export function bake(id, opts = {}, fps = 24) {
-  const key = id + "|" + JSON.stringify(opts) + "|" + fps;
+  const key = bakeKey(id, opts, fps);
   let b = cache.get(key);
   if (b) return b;
   const mod = fxMod(id), meta = mod.meta, [w, h] = meta.size, [ox, oy] = meta.origin;
@@ -54,6 +60,7 @@ export const frameAt = (b, t) => b.frames[Math.min(b.n - 1, Math.floor((((t % b.
  */
 export function blit(frame, b, X, Y, t, o = {}) {
   const F = typeof t === "number" ? frameAt(b, t) : t;
+  if (!o.flip && (o.alpha ?? 1) >= 1 && o.tint === undefined && (o.light ?? 1) === 1 && !o.noLight && !o.onlyLight) return stamp(frame, F, X, Y);
   const W = frame.w, H = frame.h, C = frame.color, L = frame.light;
   X = Math.round(X) - frame.ox;
   Y = Math.round(Y) - frame.oy;
@@ -83,6 +90,42 @@ export function blit(frame, b, X, Y, t, o = {}) {
       const g = Math.min(255, ((d >>> 8) & 255) + ((l >>> 8) & 255) * lk) | 0;
       const bb = Math.min(255, ((d >>> 16) & 255) + ((l >>> 16) & 255) * lk) | 0;
       L[j] = (255 << 24) | (bb << 16) | (g << 8) | r;
+    }
+  }
+}
+
+/**
+ * The fast path: stamp sparse pixels as they are, in integer math with no per-pixel calls. Opaque pixels overwrite,
+ * translucent ones blend over what's there keeping their combined alpha, light adds.
+ */
+export function stamp(frame, F, X, Y) {
+  const W = frame.w, H = frame.h, C = frame.color, L = frame.light, dx = F.dx, dy = F.dy, fc = F.c, fl = F.l, n = F.n;
+  X = Math.round(X) - frame.ox;
+  Y = Math.round(Y) - frame.oy;
+  for (let i = 0; i < n; i++) {
+    const x = X + dx[i], y = Y + dy[i];
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const j = y * W + x, c = fc[i];
+    if (c) {
+      const ca = c >>> 24;
+      const d = C[j];
+      if (ca === 255 || !d) C[j] = c;
+      else {
+        const da = d >>> 24, oa = ca + (((da * (255 - ca)) / 255) | 0), k = ((ca << 8) / (oa || 1)) | 0, ik = 256 - k;
+        C[j] = ((oa << 24) | (((((c >>> 16) & 255) * k + ((d >>> 16) & 255) * ik) >> 8) << 16) | (((((c >>> 8) & 255) * k + ((d >>> 8) & 255) * ik) >> 8) << 8) | ((((c & 255) * k + (d & 255) * ik) >> 8))) >>> 0;
+      }
+    }
+    const l = fl[i];
+    if (l) {
+      const d = L[j];
+      if (!d) L[j] = l;
+      else {
+        let r = (d & 255) + (l & 255), g = ((d >>> 8) & 255) + ((l >>> 8) & 255), bb = ((d >>> 16) & 255) + ((l >>> 16) & 255);
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (bb > 255) bb = 255;
+        L[j] = (0xff000000 | (bb << 16) | (g << 8) | r) >>> 0;
+      }
     }
   }
 }

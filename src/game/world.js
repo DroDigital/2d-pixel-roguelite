@@ -3,6 +3,7 @@
 
 import { FxManager } from "../engine/fxm.js";
 import { createFx, fxMod, painterFor, hex, createFrame, clearFrame } from "../engine/pfx.js";
+import { pools } from "../engine/workers.js";
 import { bake, blit } from "../engine/bake.js";
 import { G, FLOOR_TOP } from "./ctx.js";
 
@@ -88,7 +89,8 @@ export class World {
   }
   addWeather(id, opts = {}) {
     if (G.save?.settings.lowfx) return;
-    this.weather.push(createFx(fxMod(id), { ...opts, x: 160, y: 170 }));
+    const P = pools.current, o = { ...opts, x: 160, y: 170 };
+    this.weather.push(P ? P.spawn(id, o, true) : createFx(fxMod(id), o));
   }
   update(dt) {
     if (this.shakeT > 0) this.shakeT -= dt;
@@ -178,6 +180,11 @@ export class World {
   /** Weather is slow and costly: render it at 30 Hz into its own layers and lay those over the frame. */
   drawWeather(frame, layer) {
     if (!this.weather.length) return;
+    // weather on a worker arrives as finished pixels: stamp it straight in
+    if (this.weather[0].remote) {
+      for (const w of this.weather) w.draw(frame, layer);
+      return;
+    }
     if (!this.wc) this.wc = { back: createFrame(frame.w, frame.h), front: createFrame(frame.w, frame.h), n: -1 };
     const c = this.wc, tick = Math.floor(G.time * 30);
     if (layer === "back" && tick !== c.n) {
