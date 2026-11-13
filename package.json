@@ -1,0 +1,15 @@
+{
+  "name": "emberspire",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A 2.5D pixel art roguelite brawler built on the pixelfx effects library.",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "test": "node tools/smoke.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}
