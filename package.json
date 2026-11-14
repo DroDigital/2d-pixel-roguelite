@@ -36,6 +36,7 @@
       "dist/game.js",
       "dist/PIXELFX-LICENSE.txt",
       "dist/OFL-FUSION-PIXEL-FONT.txt",
+      "dist/OFL-JERSEY-10.txt",
       "desktop/**",
       "package.json"
     ],

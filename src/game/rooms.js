@@ -335,9 +335,9 @@ export class Room {
 
   // ---- the rooms that aren't fights
   setupSpecial(w, p) {
-    const run = this.run, t = this.type;
-    if (t === "combat" || t === "elite") return;
-    if (t === "boss") {
+    const run = this.run, type = this.type;
+    if (type === "combat" || type === "elite") return;
+    if (type === "boss") {
       const boss = (this.boss = makeBoss(this.biome.boss, 240, 148, run));
       G.hud.boss = boss;
       p.locked = true;
@@ -354,7 +354,7 @@ export class Room {
       return;
     }
     const later = () => w.after(0.6, () => this.openDoors());
-    if (t === "treasure") {
+    if (type === "treasure") {
       const chest = new Interactable(160, 146, { fx: null, prompt: "OPEN THE CHEST", shadow: 0 });
       chest.chestB = null;
       chest.interact = () => {
@@ -371,7 +371,7 @@ export class Room {
       chest.drawExtra = (f) => !chest.used && G.scene.drawStill(f, "pickups/chest-open", 160, 146);
       this.interactables.push(w.add(chest));
       this.fighting = false;
-    } else if (t === "rest") {
+    } else if (type === "rest") {
       w.addDecor("fire/campfire", 160, 146, {}, { solid: 10 });
       const fire = new Interactable(160, 150, { prompt: "REST BY THE FIRE (HEAL HALF)" });
       fire.interact = () => {
@@ -392,7 +392,7 @@ export class Room {
         later();
       };
       this.interactables.push(w.add(train));
-    } else if (t === "shop") {
+    } else if (type === "shop") {
       w.addDecor("scifi/hologram", 160, 132, { palette: PAL.ember }, {});
       const items = [
         { name: "VIAL OF EMBERS (HEAL 2 HEARTS)", price: 25, fx: "pickups/potion", opts: {}, buy: (it, b) => b.heal(4) },
@@ -421,7 +421,7 @@ export class Room {
         this.interactables.push(w.add(o));
       });
       this.openDoors();
-    } else if (t === "shrine") {
+    } else if (type === "shrine") {
       w.spawnFx("arcane/rune-circle", 160, 150, { palette: PAL.blood }, { layer: "floor", prio: 2 });
       const sh = new Interactable(160, 150, { fx: "pickups/crystal-shard", opts: { palette: PAL.blood }, yoff: -26, prompt: "OFFER A HEART FOR A RARE BOON" });
       sh.interact = (b = p) => {
@@ -438,7 +438,7 @@ export class Room {
       const leave = new Interactable(250, 156, { prompt: "WALK AWAY", label: "LEAVE" });
       leave.interact = () => { leave.used = sh.used = true; later(); };
       this.interactables.push(w.add(leave));
-    } else if (t === "mystery") {
+    } else if (type === "mystery") {
       const roll = pick(["egg", "fountain", "fireworks", "ambush"]);
       w.addDecor("arcane/arcane-orb", 40, FLOOR_TOP + 10, { palette: PAL.neon }, {});
       w.addDecor("arcane/arcane-orb", 280, FLOOR_TOP + 10, { palette: PAL.neon }, { flip: true });

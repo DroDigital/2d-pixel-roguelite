@@ -2,7 +2,10 @@
 """Cut pixel glyphs for Chinese and Japanese from Fusion Pixel Font (SIL OFL 1.1, by TakWolf) for exactly the
 characters the translations use, and write them to src/game/lang/glyphs.js in the game's font format.
 
-The 8 px font sits beside the 5 px "mini" font, the 10 px one beside the 7 px "big" font; their baselines line up.
+Three cuts, baselines lined up with the Latin glyphs they sit beside:
+  hi    12 px, beside Jersey 10 on the game's text layer (twice the game's resolution)
+  mini  8 px, beside the pixelfx effects' 3x5 font
+  big   10 px, beside the pixelfx effects' 5x7 font
 Fusion Pixel draws on a 100-unit grid per pixel, so each pixel is read by testing its centre against the outlines.
 
     pip install fonttools brotli
@@ -17,8 +20,8 @@ from fontTools.pens.pointInsidePen import PointInsidePen
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 CACHE = os.path.join(ROOT, "node_modules", ".cache", "fusion-pixel")
 PKG = "https://registry.npmjs.org/@fontsource/fusion-pixel-{n}px-proportional-{s}/-/fusion-pixel-{n}px-proportional-{s}-5.3.0.tgz"
-# (font size in px, the game font it sits beside, that font's bottom row)
-SIZES = {"mini": (8, 4), "big": (10, 6)}
+# (font size in px, the bottom row of the capitals it sits beside)
+SIZES = {"hi": (12, 9), "mini": (8, 4), "big": (10, 6)}
 SCRIPT = {"zh": "sc", "ja": "jp"}
 
 

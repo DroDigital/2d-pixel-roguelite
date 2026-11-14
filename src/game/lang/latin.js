@@ -33,15 +33,16 @@ export function installLatin(FONTS) {
     const G = FONTS[f].glyphs;
     for (const [ch, [baseCh, mark]] of Object.entries(MARKS)) {
       const b = G[baseCh];
-      if (!b) continue;
+      if (!b || G[ch]) continue; // the font's own accented letter wins
       const acc = ACCENTS[f][mark].map((r) => fit(r, b.w));
       G[ch] = { w: b.w, oy: -(acc.length + 1), rows: [...acc, Array(b.w).fill(false), ...b.rows] };
     }
     const c = G.C;
-    G["Ç"] = { w: c.w, oy: 0, rows: [...c.rows, ...CEDILLA[f].map((r) => fit(r, c.w))] };
+    if (!G["Ç"]) G["Ç"] = { w: c.w, oy: 0, rows: [...c.rows, ...CEDILLA[f].map((r) => fit(r, c.w))] };
     // ¡ and ¿: their upright twins turned over
     for (const [inv, up] of [["¡", "!"], ["¿", "?"]]) {
       const g = G[up];
+      if (G[inv]) continue;
       G[inv] = { w: g.w, oy: 0, rows: g.rows.slice().reverse().map((r) => r.slice().reverse()) };
     }
   }

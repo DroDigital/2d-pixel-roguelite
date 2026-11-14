@@ -1,9 +1,10 @@
-// Drawing helpers for menus and the HUD: panels, wrapped pixel text, icons.
+// Drawing helpers for menus and the HUD: panels, wrapped text (set in Jersey 10 on the text layer, see text.js), icons.
 
-import { painterFor, hex, textWidth } from "../engine/pfx.js";
+import { painterFor, hex } from "../engine/pfx.js";
 import { bake, blit } from "../engine/bake.js";
 import { G } from "./ctx.js";
-import { L, isCJK, lineExtra } from "./i18n.js";
+import { L, lineExtra } from "./i18n.js";
+import { drawText, measure, eraseText } from "./text.js";
 
 export const INK = hex("#0b0a10") >>> 0;
 export const C = Object.fromEntries(Object.entries({
@@ -13,21 +14,24 @@ export const C = Object.fromEntries(Object.entries({
 
 export const P = (frame) => painterFor(frame ?? G.screen.hud);
 
-/** Text with a dark outline. o: { font, scale, align, color fn, shadow, a }. */
+/**
+ * Text with a dark outline, translated and upper-cased. o: { font ("mini" | "big"), scale, align, color fn, shadow,
+ * a (alpha), outline (false for none), max (a width it must fit: longer text is cut short with ".."), frame }.
+ * Text over the world (o.frame is the world's frame) darkens with it when a menu dims the world.
+ */
 export function text(str, x, y, c = C.text, o = {}) {
-  const s = String(L(str)).toUpperCase(), font = o.font ?? "mini", k = o.scale ?? 1;
-  const st = { outline: o.outline === false ? undefined : (o.outline ?? INK), font, scale: k, align: o.align ?? "left", a: o.a ?? 1, shadow: o.shadow };
-  if (o.max && textWidth(s, font) * k > o.max) return squeeze(s, x, y, c, o.max, st, o.frame);
-  P(o.frame).text(s, x, y, c, st);
+  let s = String(L(str)).toUpperCase();
+  const font = o.font ?? "mini", k = o.scale ?? 1;
+  if (o.max && measure(s, font, k) > o.max) {
+    let chars = [...s];
+    while (chars.length > 1 && measure(chars.join("") + "..", font, k) > o.max) chars.pop();
+    s = chars.join("").trimEnd() + "..";
+  }
+  const world = o.frame && o.frame === G.screen.frame;
+  drawText(s, x, y, c, { font, scale: k, align: o.align ?? "left", a: o.a ?? 1, shadow: o.shadow, outline: o.outline === false ? null : (o.outline ?? INK), dim: world ? G.screen.dim : 0 });
 }
-/** Too wide for its room (a long translation): cut short with "..". */
-function squeeze(s, x, y, c, max, st, frame) {
-  const k = st.scale;
-  let chars = [...s];
-  while (chars.length > 1 && textWidth(chars.join("") + "..", st.font) * k > max) chars.pop();
-  P(frame).text(chars.join("").trimEnd() + "..", x, y, c, st);
-}
-export const width = (str, font = "mini", scale = 1) => textWidth(String(L(str)).toUpperCase(), font) * scale;
+export const width = (str, font = "mini", scale = 1) => measure(String(L(str)).toUpperCase(), font, scale);
+const textWidth = (s, font) => measure(s, font);
 
 /** Word-wrap to a pixel width; returns lines. */
 export function wrap(str, w, font = "mini") {
@@ -60,6 +64,8 @@ export function para(str, x, y, w, c = C.text, o = {}) {
 /** A framed panel: dark fill, a lit top-left edge, a dark bottom-right, corner studs. */
 export function panel(x, y, w, h, o = {}) {
   const p = P(o.frame), fill = o.fill ?? C.panel, edge = o.edge ?? C.edge, hi = o.hi ?? C.edgeHi, a = o.a ?? 0.92;
+  // a panel covers the words drawn before it (they're on the text layer, above the HUD)
+  if (a >= 0.8) eraseText(x, y, w, h);
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const border = i === 0 || j === 0 || i === w - 1 || j === h - 1;
@@ -91,8 +97,7 @@ export const HEART_EMPTY = [".kkk.kkk.", "keeekeeek", "keeeeeeek", "keeeeeeek", 
 export const HEART_PAL = { k: "#0b0a10", R: "#e8304a", r: "#ffb0b8", e: "#3a2030" };
 export const SHIELD_PAL = { k: "#0b0a10", R: "#58b4ec", r: "#d8f4ff", e: "#1a2a40" };
 
-// the pixel fonts have no brackets: add them, for key prompts like [E]
+// the effects' 3x5 font has no brackets: add them, for key prompts like [E]
 import { FONTS } from "../engine/pfx.js";
 const glyph = (src) => { const rows = src.split("|"); return { w: rows[0].length, rows: rows.map((r) => [...r].map((c) => c === "#")) }; };
 Object.assign(FONTS.mini.glyphs, { "[": glyph("##|#.|#.|#.|##"), "]": glyph("##|.#|.#|.#|##") });
-Object.assign(FONTS.big.glyphs, { "[": glyph("###|#..|#..|#..|#..|#..|###"), "]": glyph("###|..#|..#|..#|..#|..#|###") });

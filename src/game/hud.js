@@ -1,7 +1,7 @@
 // The heads-up display, drawn on its own frame over the world: hearts, the ultimate, the special's recharge, coins,
 // embers, boons, the combo, the boss's life, and pixelfx UI effects (heart lost, combo, toasts) on top.
 
-import { PAL, hex, painterFor } from "../engine/pfx.js";
+import { PAL, hex, painterFor, textWidth } from "../engine/pfx.js";
 import { FxManager } from "../engine/fxm.js";
 import { G } from "./ctx.js";
 import { t, L, isCJK } from "./i18n.js";
@@ -49,14 +49,15 @@ export class Hud {
   toast(title, txt, pal) {
     title = L(title);
     txt = L(txt ?? "");
-    if (!isCJK() && width(title) <= 46 && width(txt) <= 46) return this.fx.spawn("ui/achievement", 160, 34, { title, text: txt, ...(pal ? { palette: pal } : {}) }, { layer: "hud", prio: 2 });
+    // (the plate letters in pixelfx's own 3x5 font)
+    if (!isCJK() && textWidth(title.toUpperCase()) <= 46 && textWidth(txt.toUpperCase()) <= 46) return this.fx.spawn("ui/achievement", 160, 34, { title, text: txt, ...(pal ? { palette: pal } : {}) }, { layer: "hud", prio: 2 });
     this.notes = (this.notes ?? []).filter((n) => n.kind !== "toast");
     this.notes.push({ kind: "toast", title, txt, c: pal ? hex(pal[Math.floor(pal.length * 0.7)]) >>> 0 : C.gold, t: 0, dur: 2.4 });
   }
   /** The room's ribbon ("ROOM CLEARED"): pixelfx's when it fits, else a plain banner. */
   ribbon(txt) {
     txt = L(txt);
-    if (!isCJK() && width(txt) <= 70) return this.fx.spawn("ui/quest-complete", 160, 44, { text: txt }, { layer: "hud", prio: 2 });
+    if (!isCJK() && textWidth(txt.toUpperCase()) <= 70) return this.fx.spawn("ui/quest-complete", 160, 44, { text: txt }, { layer: "hud", prio: 2 });
     this.notes = (this.notes ?? []).filter((n) => n.kind !== "ribbon");
     this.notes.push({ kind: "ribbon", title: txt, c: C.gold, t: 0, dur: 1.8 });
   }
@@ -121,7 +122,7 @@ export class Hud {
     if (full) text("ULT", x0 + 45, 18, Math.floor(this.t * 6) & 1 ? C.gold : C.white, { outline: false });
     const cd = pl.cd.special, max = pl.cls.special.cd * run.stats.cdr;
     bar(x0 + 2, 24, 24, 1, cd <= 0 ? 1 : 1 - cd / max, cd <= 0 ? C.blue : hex("#3a5a7a") >>> 0);
-    if (pl.down && Math.floor(this.t * 3) & 1) text(pl.fallen ? t("FALLEN") : t("DOWN"), x0 + 38, 10, pl.fallen ? C.dim : C.red, { align: "center", font: "big" });
+    if (pl.down && Math.floor(this.t * 3) & 1) text(pl.fallen ? t("FALLEN") : t("DOWN"), x0 + 38, 11, pl.fallen ? C.dim : C.red, { align: "center", max: 74 });
   }
   draw() {
     const run = G.run, hud = G.screen.hud, p = painterFor(hud);
@@ -171,7 +172,8 @@ export class Hud {
       text(b.big, 160, 64, C.white, { font: "big", scale: 2, align: "center", a });
       if (b.small) text(b.small, 160, 84, C.ember, { align: "center", a });
     }
-    this.fx.drawLayer(hud, "hud");
+    // the HUD's effects (toasts, the countdown, the combo) go over the words, as they always have
+    this.fx.drawLayer(G.screen.top, "hud");
     this.drawNotes(painterFor(hud));
   }
 }

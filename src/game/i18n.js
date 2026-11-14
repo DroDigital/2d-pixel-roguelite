@@ -5,13 +5,16 @@
 // Text drawn through ui.text / para / width is looked up automatically, so plain literals and game data (boon names,
 // vessels, foes) need no call at all; only text built from pieces needs t().
 //
-// The pixel fonts get the extra letters each language needs: accented capitals for German, Spanish and French, and
-// for Chinese and Japanese pixel glyphs cut from Fusion Pixel (OFL) for exactly the characters the translations use.
+// Text is set in Jersey 10 (src/game/text.js), which has the accented capitals German, Spanish and French need; for
+// Chinese and Japanese, pixel glyphs are cut from Fusion Pixel (OFL) for exactly the characters the translations use.
+// The pixelfx effects' own 3x5 and 5x7 fonts get accents built onto their letters (lang/latin.js).
 
 import { FONTS } from "../engine/pfx.js";
 import { FxManager } from "../engine/fxm.js";
 import { installLatin } from "./lang/latin.js";
 import { CJK } from "./lang/glyphs.js";
+import { decode } from "./lang/decode.js";
+import { setTextGlyphs } from "./text.js";
 import de from "./lang/de.js";
 import es from "./lang/es.js";
 import fr from "./lang/fr.js";
@@ -43,7 +46,7 @@ export const lang_ = () => lang;
 /** Chinese and Japanese: taller glyphs (lines need more room) and no spaces between words. */
 export const isCJK = () => lang === "zh" || lang === "ja";
 /** Extra line height for wrapped text: CJK glyphs are taller, and accents need room (with their outline) above a line. */
-export const lineExtra = () => (isCJK() ? 3 : lang === "en" ? 0 : 2);
+export const lineExtra = () => (lang === "en" ? 0 : 1);
 /** A character set without spaces between words (wrap anywhere). */
 export const CJK_RE = /[⺀-鿿　-〿＀-￯]/;
 
@@ -64,6 +67,7 @@ let installed = false;
 export function setLang(id) {
   if (!LANGS.some((l) => l.id === id)) id = "en";
   if (!installed) {
+    // the pixelfx effects keep their own 3x5 and 5x7 lettering (their layouts are built around it), with accents added
     installLatin(FONTS);
     base.mini = { ...FONTS.mini.glyphs };
     base.big = { ...FONTS.big.glyphs };
@@ -75,24 +79,17 @@ export function setLang(id) {
   // the current language's own (Japanese and Chinese draw some shared characters differently)
   FONTS.mini.glyphs = { ...base.mini };
   FONTS.big.glyphs = { ...base.big };
+  const hi = {};
   for (const set of ["names", id === "zh" || id === "ja" ? id : null]) {
     if (!set || !CJK[set]) continue;
     for (const f of ["mini", "big"]) Object.assign(FONTS[f].glyphs, decode(CJK[set][f]));
+    Object.assign(hi, decode(CJK[set].hi));
   }
+  // the text layer: Jersey 10 and this language's CJK glyphs at twice the game's resolution
+  setTextGlyphs(hi);
   if (typeof document !== "undefined") document.documentElement.lang = LANGS.find((l) => l.id === id).html;
 }
 
-/** Glyph data: "char:w,oy,row,row,..." with each row a hex bitmask (bit 0 = leftmost column), joined by "|". */
-function decode(src = "") {
-  const out = {};
-  if (!src) return out;
-  for (const item of src.split("|")) {
-    const i = item.indexOf(":", 1), ch = item.slice(0, i), [w, oy, ...rows] = item.slice(i + 1).split(",");
-    const W = +w;
-    out[ch] = { w: W, oy: +oy, rows: rows.map((r) => { const b = parseInt(r, 16); return Array.from({ length: W }, (_, c) => !!(b >> c & 1)); }) };
-  }
-  return out;
-}
 
 // effects that print words (toasts, level-ups, the countdown) get them translated as they spawn
 FxManager.translate = L;
