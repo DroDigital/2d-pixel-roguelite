@@ -4,6 +4,7 @@
 import { PAL, hex, painterFor } from "../engine/pfx.js";
 import { FxManager } from "../engine/fxm.js";
 import { G } from "./ctx.js";
+import { t, L, isCJK } from "./i18n.js";
 import { C, text, bar, panel, icon, HEART, HEART_HALF, HEART_EMPTY, HEART_PAL, SHIELD_PAL, width } from "./ui.js";
 import { ELEM_PAL } from "./boons.js";
 
@@ -24,6 +25,7 @@ export class Hud {
   update(dt) {
     this.t += dt;
     this.fx.update(dt);
+    if (this.notes) this.notes = this.notes.filter((n) => (n.t += dt) < n.dur);
     for (const k in this.bumps) this.bumps[k] = Math.max(0, this.bumps[k] - dt * 4);
     if (this.boss) this.bossTrail = Math.max(this.boss.hp / this.boss.maxhp, this.bossTrail - dt * 0.35);
     if (this.banner && (this.banner.t += dt) > this.banner.dur) this.banner = null;
@@ -43,11 +45,38 @@ export class Hud {
   comboPop(n) {
     this.fx.spawn("ui/combo-counter", 262, 60, { count: n, label: "COMBO" }, { layer: "hud", prio: 2 });
   }
+  /** A medal toast. pixelfx's own when the words fit its plate (2x text, ~46 font px a line); otherwise a plate sized to them. */
   toast(title, txt, pal) {
-    this.fx.spawn("ui/achievement", 160, 34, { title, text: txt, ...(pal ? { palette: pal } : {}) }, { layer: "hud", prio: 2 });
+    title = L(title);
+    txt = L(txt ?? "");
+    if (!isCJK() && width(title) <= 46 && width(txt) <= 46) return this.fx.spawn("ui/achievement", 160, 34, { title, text: txt, ...(pal ? { palette: pal } : {}) }, { layer: "hud", prio: 2 });
+    this.notes = (this.notes ?? []).filter((n) => n.kind !== "toast");
+    this.notes.push({ kind: "toast", title, txt, c: pal ? hex(pal[Math.floor(pal.length * 0.7)]) >>> 0 : C.gold, t: 0, dur: 2.4 });
   }
+  /** The room's ribbon ("ROOM CLEARED"): pixelfx's when it fits, else a plain banner. */
   ribbon(txt) {
-    this.fx.spawn("ui/quest-complete", 160, 44, { text: txt }, { layer: "hud", prio: 2 });
+    txt = L(txt);
+    if (!isCJK() && width(txt) <= 70) return this.fx.spawn("ui/quest-complete", 160, 44, { text: txt }, { layer: "hud", prio: 2 });
+    this.notes = (this.notes ?? []).filter((n) => n.kind !== "ribbon");
+    this.notes.push({ kind: "ribbon", title: txt, c: C.gold, t: 0, dur: 1.8 });
+  }
+  /** Toasts and ribbons too long (or too tall) for the pixelfx plates. */
+  drawNotes(p) {
+    for (const n of this.notes ?? []) {
+      const k = Math.min(1, n.t / 0.18), out = Math.max(0, (n.t - n.dur + 0.25) / 0.25), slide = Math.round((1 - k) ** 3 * 30 + out * out * 30);
+      if (n.kind === "toast") {
+        const w = Math.min(300, Math.max(width(n.title, "big"), width(n.txt)) + 32), x = 160 - w / 2 + slide, cj = isCJK() ? 4 : 0, h = 26 + cj * 2;
+        panel(x, 21, w, h, { a: 0.92 * (1 - out), glow: n.c });
+        p.sprite(GEM, GEM_PAL, x + 9, 29 + cj);
+        p.light(x + 11, 32 + cj, n.c, 0.5);
+        text(n.title, x + 24, 25 + cj, n.c, { font: "big" });
+        text(n.txt, x + 24, 36 + cj * 2, C.white);
+      } else {
+        const w = width(n.title, "big") * 2 + 24, x = 160 - w / 2;
+        panel(x, 36 - (isCJK() ? 4 : 0), w, 22 + (isCJK() ? 6 : 0), { a: 0.85 * (1 - out), glow: n.c });
+        text(n.title, 160, 41, n.c, { font: "big", scale: 2, align: "center", a: k * (1 - out) });
+      }
+    }
   }
   /** A title card: big text that fades in and out. */
   title(big, small, dur = 2.6) {
@@ -80,7 +109,7 @@ export class Hud {
   panel(p, run, pl) {
     const x0 = 2 + pl.slot * 80, col = pl.color;
     p.rect(x0, 1, 76, 1, col);
-    text(`P${pl.slot + 1} ${pl.cls.name}`, x0 + 1, 2, col, { outline: false });
+    text(`P${pl.slot + 1} ${L(pl.cls.name)}`, x0 + 1, 2, col, { outline: false, max: 75 });
     const n = Math.ceil(pl.maxHp / 2), step = n > 9 ? Math.floor(74 / n) : 8;
     for (let i = 0; i < n; i++) {
       const v = pl.hp - i * 2, x = x0 + 1 + i * step, y = 9;
@@ -92,7 +121,7 @@ export class Hud {
     if (full) text("ULT", x0 + 45, 18, Math.floor(this.t * 6) & 1 ? C.gold : C.white, { outline: false });
     const cd = pl.cd.special, max = pl.cls.special.cd * run.stats.cdr;
     bar(x0 + 2, 24, 24, 1, cd <= 0 ? 1 : 1 - cd / max, cd <= 0 ? C.blue : hex("#3a5a7a") >>> 0);
-    if (pl.down && Math.floor(this.t * 3) & 1) text("DOWN", x0 + 38, 10, C.red, { align: "center", font: "big" });
+    if (pl.down && Math.floor(this.t * 3) & 1) text(pl.fallen ? t("FALLEN") : t("DOWN"), x0 + 38, 10, pl.fallen ? C.dim : C.red, { align: "center", font: "big" });
   }
   draw() {
     const run = G.run, hud = G.screen.hud, p = painterFor(hud);
@@ -143,6 +172,7 @@ export class Hud {
       if (b.small) text(b.small, 160, 84, C.ember, { align: "center", a });
     }
     this.fx.drawLayer(hud, "hud");
+    this.drawNotes(painterFor(hud));
   }
 }
 void panel;

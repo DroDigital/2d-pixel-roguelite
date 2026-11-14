@@ -3,6 +3,7 @@
 import { painterFor, hex, textWidth } from "../engine/pfx.js";
 import { bake, blit } from "../engine/bake.js";
 import { G } from "./ctx.js";
+import { L, isCJK, lineExtra } from "./i18n.js";
 
 export const INK = hex("#0b0a10") >>> 0;
 export const C = Object.fromEntries(Object.entries({
@@ -14,26 +15,44 @@ export const P = (frame) => painterFor(frame ?? G.screen.hud);
 
 /** Text with a dark outline. o: { font, scale, align, color fn, shadow, a }. */
 export function text(str, x, y, c = C.text, o = {}) {
-  P(o.frame).text(String(str).toUpperCase(), x, y, c, { outline: o.outline === false ? undefined : (o.outline ?? INK), font: o.font ?? "mini", scale: o.scale ?? 1, align: o.align ?? "left", a: o.a ?? 1, shadow: o.shadow });
+  const s = String(L(str)).toUpperCase(), font = o.font ?? "mini", k = o.scale ?? 1;
+  const st = { outline: o.outline === false ? undefined : (o.outline ?? INK), font, scale: k, align: o.align ?? "left", a: o.a ?? 1, shadow: o.shadow };
+  if (o.max && textWidth(s, font) * k > o.max) return squeeze(s, x, y, c, o.max, st, o.frame);
+  P(o.frame).text(s, x, y, c, st);
 }
-export const width = (str, font = "mini", scale = 1) => textWidth(String(str).toUpperCase(), font) * scale;
+/** Too wide for its room (a long translation): cut short with "..". */
+function squeeze(s, x, y, c, max, st, frame) {
+  const k = st.scale;
+  let chars = [...s];
+  while (chars.length > 1 && textWidth(chars.join("") + "..", st.font) * k > max) chars.pop();
+  P(frame).text(chars.join("").trimEnd() + "..", x, y, c, st);
+}
+export const width = (str, font = "mini", scale = 1) => textWidth(String(L(str)).toUpperCase(), font) * scale;
 
 /** Word-wrap to a pixel width; returns lines. */
 export function wrap(str, w, font = "mini") {
-  const words = String(str).toUpperCase().split(/\s+/), lines = [];
-  let line = "";
-  for (const word of words) {
-    const t = line ? line + " " + word : word;
-    if (textWidth(t, font) > w && line) {
+  // words are runs between spaces; in Chinese and Japanese every character is a word of its own (no spaces)
+  const s = String(L(str)).toUpperCase(), tokens = [], lines = [];
+  for (const m of s.matchAll(/(\s+)|([\u2e80-\u9fff\u3000-\u303f\uff00-\uffef])|([^\s\u2e80-\u9fff\u3000-\u303f\uff00-\uffef]+)/g)) {
+    if (m[1]) { if (tokens.length) tokens[tokens.length - 1].sp = true; continue; }
+    tokens.push({ s: m[2] ?? m[3], sp: false });
+  }
+  let line = "", prevSp = false;
+  for (const tk of tokens) {
+    const next = line ? line + (prevSp ? " " : "") + tk.s : tk.s;
+    // closing punctuation never starts a line
+    if (textWidth(next, font) > w && line && !NO_START.includes(tk.s)) {
       lines.push(line);
-      line = word;
-    } else line = t;
+      line = tk.s;
+    } else line = next;
+    prevSp = tk.sp;
   }
   if (line) lines.push(line);
   return lines;
 }
+const NO_START = "、。，．！？：；）」』】〉》ー…・,.!?:;)";
 export function para(str, x, y, w, c = C.text, o = {}) {
-  const lines = wrap(str, w, o.font), lh = o.lh ?? (o.font === "big" ? 9 : 7);
+  const lines = wrap(str, w, o.font), lh = (o.lh ?? (o.font === "big" ? 9 : 7)) + lineExtra();
   lines.forEach((l, i) => text(l, o.align === "center" ? x + w / 2 : x, y + i * lh, c, { ...o, align: o.align ?? "left" }));
   return lines.length * lh;
 }

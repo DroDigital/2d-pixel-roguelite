@@ -22,4 +22,5 @@ const style = html.match(/<style>[\s\S]*?<\/style>/)[0]
   .replace("color: #ff9a4a; }", "color: var(--ember); }");
 await writeFile(ROOT + "dist/artifact.html", `<title>Emberspire</title>\n${style}\n<canvas id="game" width="320" height="180" tabindex="0"></canvas>\n<div id="boot">KINDLING THE EMBER…</div>\n<script>${js.replace(/<\/script/g, "<\\/script")}</script>\n<script>document.getElementById("game").focus();</script>\n`);
 await cp(ROOT + "vendor/pixelfx/LICENSE", ROOT + "dist/PIXELFX-LICENSE.txt");
+await cp(ROOT + "licenses/OFL-fusion-pixel-font.txt", ROOT + "dist/OFL-FUSION-PIXEL-FONT.txt");
 console.log(`dist/game.js ${(js.length / 1024).toFixed(0)} KB (worker ${(workerSrc.length / 1024).toFixed(0)} KB inside)`);

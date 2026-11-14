@@ -5,7 +5,11 @@
 import { createFx, fxMod } from "./pfx.js";
 import { pools } from "./workers.js";
 
+const TEXT_OPTS = ["text", "title", "word", "label"];
+
 export class FxManager {
+  /** Set by the game's i18n: the current language's text for an English string. */
+  static translate = (s) => s;
   constructor() {
     this.list = [];
     this.budget = 70;
@@ -24,8 +28,12 @@ export class FxManager {
     if (this.low && prio === 0) return null;
     const mod = fxMod(id);
     const o = { ...opts, x, y, flip: !!s.flip, angle: s.angle ?? 0 }, P = pools.current;
+    // words in an effect (toasts, level-ups, the countdown) are translated, and drawn here, where the fonts have
+    // the current language's glyphs
+    let words = false;
+    for (const k of TEXT_OPTS) if (typeof o[k] === "string") (o[k] = FxManager.translate(o[k])), (words = true);
     // heavy effects run on another core when there's a worker pool; light ones stay here
-    const inst = P && !s.local && P.worthy(mod, o) ? P.spawn(id, o, mod.meta.size[0] >= 320) : createFx(mod, o);
+    const inst = P && !s.local && !words && P.worthy(mod, o) ? P.spawn(id, o, mod.meta.size[0] >= 320) : createFx(mod, o);
     const e = {
       id, mod, inst, layer: s.layer ?? "world", follow: s.follow ?? null, ox: s.ox ?? 0, oy: s.oy ?? 0,
       depth: s.depth ?? y, dz: s.dz ?? 0, speed: s.speed ?? 1, life: s.life ?? Infinity, age: 0, dead: false,

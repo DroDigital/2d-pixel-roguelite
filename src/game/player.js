@@ -8,6 +8,11 @@ import { G, sfx, clampX, clampY } from "./ctx.js";
 import { resolveMoveHit } from "./skills.js";
 import { applyStatus, aoe, damage, inRadius } from "./combat.js";
 import { hex, PAL, painterFor } from "../engine/pfx.js";
+import { RAISE_COST, RAISE_MIN } from "./run.js";
+import { t } from "./i18n.js";
+
+/** Co-op: how long a teammate holds USE to revive a downed player, or to raise a fallen one; how long until a downed player bleeds out. */
+const REVIVE_TIME = 1.3, RAISE_TIME = 2.6, BLEED_OUT = 25, REVIVE_RANGE = 26;
 
 export const PLAYER_COLORS = ["#ff9a3c", "#58b4ec", "#7ee88a", "#ff86e6"];
 
@@ -320,27 +325,56 @@ export class Player extends Vessel {
   /** Out of hearts in co-op: on your knees until a friend stands by you long enough, or the room is cleared. */
   goDown() {
     this.down = true;
+    this.fallen = false;
+    this.bleedT = BLEED_OUT;
     this.hittable = false;
     this.perf = null;
     this.dashT = -1;
     this.reviveT = 0;
     this.st = {};
     G.world.spawnFx("spawn/soul-rise", this.x, this.y, { actor: this.snapshot(), palette: PAL.fire }, { prio: 2 });
-    G.hud?.toast(`P${this.slot + 1} IS DOWN`, "STAND BY THEM TO REKINDLE", PAL.blood);
+    G.hud?.toast(t("P{0} IS DOWN", this.slot + 1), t("HOLD USE BESIDE THEM TO REVIVE"), PAL.blood);
   }
   revive(hp = 2) {
     this.down = false;
+    this.fallen = false;
     this.hittable = true;
     this.hp = Math.max(1, Math.min(this.maxHp, hp));
     this.iframe = 2;
     G.world.spawnFx("spawn/respawn-beam", this.x, this.y, { actor: this.snapshot() }, { follow: this, prio: 2 });
     sfx("holy", 0.9, 1.2);
   }
+  /** The teammate holding USE beside this downed player, if any. */
+  helper() {
+    return G.world.players.find((o) => o !== this && !o.down && !o.dead && !o.hidden && Math.hypot(o.x - this.x, (o.y - this.y) * 1.6) < REVIVE_RANGE && o.ctrl.isDown("interact"));
+  }
+  /** What raising this fallen player costs the party's purse. */
+  raiseCost() {
+    return Math.max(RAISE_MIN, Math.ceil(G.run.coins * RAISE_COST));
+  }
   updateDown(dt) {
-    // a living teammate standing close rekindles you
-    const helper = G.world.players.find((o) => o !== this && !o.down && !o.dead && Math.hypot(o.x - this.x, (o.y - this.y) * 1.6) < 28);
-    this.reviveT = helper ? this.reviveT + dt : Math.max(0, this.reviveT - dt * 0.5);
-    if (this.reviveT >= 1.8) this.revive(Math.ceil(this.maxHp / 3));
+    // left alone too long, a downed player bleeds out and falls; a fallen one costs coins to raise
+    if (!this.fallen && (this.bleedT -= dt) <= 0) {
+      this.fallen = true;
+      this.reviveT = 0;
+      G.world.spawnFx("spawn/soul-rise", this.x, this.y, { actor: this.snapshot(), palette: PAL.shadow ?? PAL.blood }, { prio: 2 });
+      G.hud?.toast(t("P{0} HAS FALLEN", this.slot + 1), t("HOLD USE TO RAISE THEM FOR {0}G", this.raiseCost()), PAL.blood);
+      sfx("hurt", 0.8, 0.6);
+    }
+    const h = this.helper(), need = this.fallen ? RAISE_TIME : REVIVE_TIME;
+    const canPay = !this.fallen || G.run.coins >= this.raiseCost();
+    this.reviveT = h && canPay ? this.reviveT + dt : Math.max(0, this.reviveT - dt * 1.5);
+    if (h && !canPay && !this.broke) (this.broke = true), G.hud?.toast(t("NOT ENOUGH GOLD"), t("RAISING P{0} COSTS {1}G", this.slot + 1, this.raiseCost()), PAL.blood);
+    if (!h) this.broke = false;
+    if (this.reviveT >= need) {
+      if (this.fallen) {
+        const cost = this.raiseCost();
+        G.run.coins -= cost;
+        G.hud?.bump("coins");
+        G.hud?.toast(t("P{0} RAISED", this.slot + 1), t("THE PARTY PAID {0}G", cost), PAL.fire);
+        this.revive(Math.ceil(this.maxHp * 0.3));
+      } else this.revive(Math.ceil(this.maxHp / 3));
+    }
   }
   drawExtra(frame) {
     const coop = G.world?.players?.length > 1;
@@ -351,8 +385,15 @@ export class Player extends Vessel {
     p.px(this.x, y + 7, this.color);
     p.light(this.x, y + 3, this.color, 0.4);
     if (this.down) {
-      const k = this.reviveT / 1.8;
-      for (let i = 0; i < 24; i++) if (i / 24 < k || Math.floor(G.time * 4) & 1) p.dot(this.x + Math.cos((i / 24) * 6.283 - 1.57) * 12, this.y - 2 + Math.sin((i / 24) * 6.283 - 1.57) * 4, i / 24 < k ? this.color : 0xff4a4462, 1);
+      // the revive bar fills while a teammate holds USE; under it, the time left before bleeding out
+      const need = this.fallen ? RAISE_TIME : REVIVE_TIME, k = Math.min(1, this.reviveT / need), bx = this.x - 12, by = this.y + 4;
+      p.rect(bx - 1, by - 1, 26, 4, 0xff0b0a10);
+      p.rect(bx, by, 24, 2, 0xff2a2638);
+      if (k > 0) p.rect(bx, by, Math.round(24 * k), 2, this.fallen ? 0xffffd84a : this.color);
+      if (!this.fallen) {
+        const b = Math.max(0, this.bleedT / BLEED_OUT);
+        p.rect(bx, by + 3, Math.round(24 * b), 1, b < 0.3 && Math.floor(G.time * 6) & 1 ? 0xffffffff : 0xffc0283a);
+      } else p.text(t("FALLEN"), this.x, by + 5, 0xff8a8aa0, { align: "center", outline: 0xff0b0a10 });
     }
   }
 }

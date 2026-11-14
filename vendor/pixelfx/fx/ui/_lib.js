@@ -34,6 +34,8 @@ let ids = new Int16Array(4096), edges = new Uint8Array(4096);
  */
 export function drawWord(p, items, st) {
   if (!items.length) return;
+  // glyphs that reach above the line (accents, CJK) start oy font rows higher
+  items = items.map((it) => (it.g.oy ? { ...it, y: it.y + it.g.oy * it.sy } : it));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const it of items) {
     const h = it.g.rows.length * it.sy, w = it.g.w * it.sx, sl = Math.abs(it.slant ?? 0) * it.g.rows.length;
