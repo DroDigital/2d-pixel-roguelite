@@ -8,6 +8,8 @@ import { C, text, para, panel, bar, icon, wrap, width } from "./ui.js";
 import { ELEM_PAL, ELEM_NAME, RARITY_COLOR } from "./boons.js";
 import { CLASSES, CLASS_ORDER } from "./classes.js";
 import { UPGRADES } from "./meta.js";
+import { DEVICE_LABEL } from "../engine/input.js";
+import { PLAYER_COLORS } from "./player.js";
 
 const nav = () => {
   const I = G.input;
@@ -170,7 +172,8 @@ export class Controls {
     text("HOW TO PLAY", 160, 27, C.gold, { align: "center", font: "big" });
     const rows = [["MOVE", "WASD / ARROWS / LEFT STICK"], ["ATTACK (COMBO)", "J / Z / A"], ["SPECIAL", "K / X / X"], ["DASH (I-FRAMES)", "L / C / SPACE / SHIFT / B"], ["ULTIMATE", "I / V / Y"], ["USE", "E / F / LB"], ["PAUSE", "ESC / P / START"]];
     rows.forEach(([a, b], i) => { text(a, 56, 44 + i * 10, C.ember); text(b, 150, 44 + i * 10, C.text); });
-    para("DASH JUST BEFORE A BLOW LANDS TO PARRY IT. FOES GLOW RED AS THEY WIND UP. CLEAR ROOMS, PICK BOONS, CLIMB FIVE REALMS. EMBERS YOU CARRY HOME BUY POWER FOR THE NEXT CLIMB.", 56, 118, 208, C.dim);
+    para("DASH JUST BEFORE A BLOW LANDS TO PARRY IT. FOES GLOW RED AS THEY WIND UP. CLEAR ROOMS, PICK BOONS, CLIMB FIVE REALMS. EMBERS YOU CARRY HOME BUY POWER FOR THE NEXT CLIMB.", 56, 114, 208, C.dim);
+    para("CO-OP 1-4: AT THE CAMP, PRESS A ON ANOTHER PAD OR [.] (ARROWS PLAYER) TO JOIN. STAND OVER A FALLEN FRIEND TO REKINDLE THEM.", 56, 138, 208, C.ember);
   }
 }
 
@@ -339,3 +342,109 @@ export class Codex {
   }
 }
 export { bar, width, bake, blit, fxMod };
+
+// ---------------------------------------------------------------- the party
+
+/**
+ * The party altar: up to four players, each on their own device, each choosing their own vessel. A new device joins by
+ * pressing ATTACK; LEFT and RIGHT change vessel; SPECIAL leaves (not the host); ATTACK on a sleeping vessel awakens it
+ * with embers; the host's ATTACK (or ESC) closes the altar. Solo again, the host goes back to using any device.
+ */
+export class PartyMenu {
+  constructor(onChange, onClose, joining) {
+    this.onChange = onChange;
+    this.onClose = onClose;
+    this.t = 0;
+    const I = G.input, P = G.party;
+    // the host gets a device of their own so others can join without fighting over the keyboard
+    if (P.length === 1 && !P[0].device) P[0].device = I.lastDevice === "pad" ? "pad" + (I.lastPad ?? 0) : "kbA";
+    if (joining && !P.some((s) => s.device === joining)) this.join(joining);
+    for (const d of I.devices()) I.device(d).flush();
+  }
+  join(device) {
+    const P = G.party;
+    if (P.length >= 4) return;
+    const taken = new Set(P.map((s) => s.cls)), S = G.save;
+    const cls = CLASS_ORDER.find((c) => S.unlocked[c] && !taken.has(c)) ?? CLASS_ORDER.find((c) => S.unlocked[c]);
+    P.push({ cls, device });
+    sfx("powerup", 0.7);
+    this.onChange();
+  }
+  close() {
+    const S = G.save;
+    // nobody climbs as a vessel that's still asleep
+    for (const s of G.party) if (!S.unlocked[s.cls]) s.cls = CLASS_ORDER.find((c) => S.unlocked[c]);
+    S.lastClass = G.party[0].cls;
+    if (G.party.length === 1) G.party[0].device = null;
+    persist();
+    this.onChange();
+    this.onClose();
+    G.input.flush();
+  }
+  update(dt) {
+    this.t += dt;
+    const I = G.input, P = G.party, S = G.save;
+    if (this.t < 0.2) return true;
+    const used = new Set(P.map((s) => s.device));
+    for (const d of I.devices()) {
+      const c = I.device(d);
+      if (!used.has(d) && c.take("attack")) return this.join(d), true;
+    }
+    for (let i = P.length - 1; i >= 0; i--) {
+      const s = P[i], c = I.device(s.device), k = CLASS_ORDER.indexOf(s.cls);
+      if (c.take("mleft") || c.take("left")) (s.cls = CLASS_ORDER[(k + CLASS_ORDER.length - 1) % CLASS_ORDER.length]), sfx("ui"), this.onChange();
+      if (c.take("mright") || c.take("right")) (s.cls = CLASS_ORDER[(k + 1) % CLASS_ORDER.length]), sfx("ui"), this.onChange();
+      if (i > 0 && c.take("special")) {
+        P.splice(i, 1);
+        sfx("nope");
+        this.onChange();
+        continue;
+      }
+      if (c.take("attack")) {
+        const cls = CLASSES[s.cls];
+        if (!S.unlocked[s.cls]) {
+          if (S.embers >= cls.cost) {
+            S.embers -= cls.cost;
+            S.unlocked[s.cls] = true;
+            persist();
+            sfx("powerup");
+            G.hud.toast("VESSEL AWAKENED", cls.name, PAL.fire);
+            this.onChange();
+          } else sfx("nope");
+        } else if (i === 0) return this.close(), false;
+        else (s.ready = !s.ready), sfx("ok");
+      }
+    }
+    if (I.take("pause")) return this.close(), false;
+    return true;
+  }
+  draw() {
+    const P = G.party, S = G.save;
+    panel(4, 14, 312, 152, { glow: C.ember, a: 0.94 });
+    text("THE PARTY", 160, 19, C.gold, { align: "center", font: "big" });
+    text(`1 TO 4 PLAYERS. EACH PICKS THEIR OWN VESSEL.  EMBERS ${S.embers}`, 160, 29, C.dim, { align: "center" });
+    for (let i = 0; i < 4; i++) {
+      const x = 8 + i * 77, s = P[i], col = hex(PLAYER_COLORS[i]) >>> 0;
+      panel(x, 38, 73, 112, { edge: s ? col : C.edge, a: 0.9 });
+      text(`P${i + 1}${i === 0 ? " HOST" : ""}`, x + 36, 42, s ? col : C.dark, { align: "center" });
+      if (!s) {
+        const blink = Math.floor(this.t * 2) & 1;
+        text("PRESS ATTACK", x + 36, 80, blink ? C.text : C.dim, { align: "center" });
+        text("TO JOIN", x + 36, 87, blink ? C.text : C.dim, { align: "center" });
+        para("PAD: A   KEYS: [.] OR NUM 1 (ARROWS MOVE)", x + 4, 104, 65, C.dark, { align: "center" });
+        continue;
+      }
+      const cls = CLASSES[s.cls], own = S.unlocked[s.cls];
+      text("< " + cls.name + " >", x + 36, 52, own ? C.white : C.dark, { align: "center" });
+      text(cls.title, x + 36, 59, C.dim, { align: "center" });
+      text(`HEARTS ${cls.hp / 2}  SPD ${cls.speed}`, x + 36, 68, C.blue, { align: "center" });
+      text(cls.special.name, x + 36, 76, C.text, { align: "center" });
+      text(cls.ult.name, x + 36, 83, C.ember, { align: "center" });
+      if (!own) text(`AWAKEN: ${cls.cost} EMBERS`, x + 36, 96, S.embers >= cls.cost ? C.gold : C.red, { align: "center" });
+      else if (i > 0) text(s.ready ? "READY" : "", x + 36, 96, C.green, { align: "center" });
+      text(DEVICE_LABEL[s.device] ?? "ANY DEVICE", x + 36, 132, C.dark, { align: "center" });
+      text(i === 0 ? "ATTACK: DONE" : "SPECIAL: LEAVE", x + 36, 140, C.dim, { align: "center" });
+    }
+    text("LEFT/RIGHT: CHANGE VESSEL   ATTACK ON A SLEEPING VESSEL: AWAKEN IT   ESC: DONE", 160, 156, C.dim, { align: "center" });
+  }
+}

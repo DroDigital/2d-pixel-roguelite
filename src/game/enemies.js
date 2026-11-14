@@ -4,7 +4,7 @@
 import { PAL, READY } from "../engine/pfx.js";
 import { vesselPal } from "../engine/body.js";
 import { Vessel, Critter, Corpse, Projectile } from "./entity.js";
-import { G, sfx, rnd, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT, pick } from "./ctx.js";
+import { G, sfx, rnd, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT, pick, partySize, partyHp } from "./ctx.js";
 import { damage, aoe, applyStatus, STATUS } from "./combat.js";
 import { resolveMoveHit, fxAt } from "./skills.js";
 
@@ -49,7 +49,7 @@ const BOULDER = { posesFrom: "moves/earth-stomp", from: -0.5, end: 0.9, speed: 0
 
 const shotEv = (o) => ev(o.t, (a, p) => {
   if (o.muzzle) fxAt(p, o.muzzle, o.lx - 2, o.ly, { height: 0 }, { prio: 0 });
-  const t = G.world.player, dy = t ? Math.max(-0.4, Math.min(0.4, (t.y - a.y) / Math.max(40, Math.abs(t.x - a.x)))) : 0;
+  const t = G.world.nearestPlayer(a.x, a.y), dy = t ? Math.max(-0.4, Math.min(0.4, (t.y - a.y) / Math.max(40, Math.abs(t.x - a.x)))) : 0;
   const [x] = p.at(o.lx, 0);
   G.world.add(new Projectile({ x, y: a.y + 1, z: -o.ly, vx: p.facing * o.speed, vy: dy * o.speed, team: "enemy", owner: a, fxId: o.fx, fxOpts: o.opts, dmg: o.dmg ?? 1, elem: o.elem ?? "phys", kind: o.kind ?? "bullet", life: 3, h: 8, status: o.status, onExpire: o.onExpire, r: o.r ?? 4 }));
   sfx(o.sfx ?? "shoot", 0.6);
@@ -62,7 +62,7 @@ const ROCKET = { posesFrom: "moves/rocket-launcher", weapon: "launcher", from: -
 const HEX = {
   posesFrom: "arcane/spell-charge", from: -0.46, end: 0.9, speed: 0.8,
   events: [ev(-0.4, (a, p) => fxAt(p, "arcane/spell-charge", 0, 0, { palette: PAL.arcane }, { life: 0.5 })), ev(0, (a) => {
-    const t = G.world.player;
+    const t = G.world.nearestPlayer(a.x, a.y);
     if (!t) return;
     const x = t.x, y = t.y;
     G.world.spawnFx("shadow/hex-sigil", x, y, {}, { prio: 1, layer: "floor", speed: 2.2 });
@@ -76,7 +76,7 @@ const HEX = {
 const SMITE = {
   posesFrom: "moves/holy-smite", from: -0.42, end: 1.0, speed: 0.75,
   events: [ev(-0.2, (a) => {
-    const t = G.world.player;
+    const t = G.world.nearestPlayer(a.x, a.y);
     if (!t) return;
     const x = t.x, y = t.y;
     G.world.telegraph(x, y, 30, 1.0, () => {
@@ -107,7 +107,7 @@ const AI = {
     if (e.side === undefined || Math.abs(dx) > 120) e.side = dx > 0 ? -1 : 1;
     const wantX = t.x + e.side * range * 0.85, wantY = t.y + (e.lane ?? 0);
     const close = Math.abs(dx) <= range + 4 && Math.abs(t.y - e.y) < 9;
-    if (close && e.cool <= 0 && tokens() < (e.def.elite ? 3 : 2)) {
+    if (close && e.cool <= 0 && tokens() < (e.def.elite ? 3 : 2) + partySize() - 1) {
       e.facing = Math.sign(dx) || e.facing;
       return e.attack(pick(e.def.moves));
     }
@@ -126,7 +126,7 @@ const AI = {
     if (wantX < 20 || wantX > 300) wantX = t.x - side * want;
     const aligned = Math.abs(t.y - e.y) < 8 && Math.abs(Math.abs(dx) - want) < 40;
     e.facing = Math.sign(dx) || e.facing;
-    if (aligned && e.cool <= 0 && tokens() < 3) return e.attack(pick(e.def.moves));
+    if (aligned && e.cool <= 0 && tokens() < 2 + partySize()) return e.attack(pick(e.def.moves));
     if (!toward(e, wantX, t.y, e.def.speed * e.speedK, dt)) {
       e.moving = true;
       e.walkT += dt;
@@ -137,7 +137,7 @@ const AI = {
   caster(e, dt, t) {
     if (!t) return e.idle(dt);
     e.facing = Math.sign(t.x - e.x) || e.facing;
-    if (e.cool <= 0 && tokens() < 3) return e.attack(pick(e.def.moves));
+    if (e.cool <= 0 && tokens() < 2 + partySize()) return e.attack(pick(e.def.moves));
     const side = Math.sign(e.x - t.x) || 1;
     if (!toward(e, clampX(t.x + side * 120), e.home ?? t.y, e.def.speed * e.speedK, dt)) {
       e.moving = true;
@@ -288,7 +288,7 @@ export const ENEMIES = {
   cultist: { name: "CULTIST", type: "vessel", pal: VP.cult, guard: { ...READY, fx: 9, fy: -19, bx: 8, by: -20 }, hp: 32, speed: 30, ai: "caster", moves: [HEX, HEX, MISSILES], cool: 2.6, coins: [2, 3], death: "shadow" },
   graveknight: { name: "GRAVE KNIGHT", type: "vessel", pal: VP.grave, guard: { ...READY, weapon: "greatsword", fx: 10, fy: -19, sa: 1.2 }, hp: 120, speed: 30, ai: "brawler", range: 52, moves: [CLEAVE, SCYTHE], cool: 1.2, coins: [5, 8], death: "shadow", heavy: true, elite: true },
   spearman: { name: "DROWNED", type: "vessel", pal: VP.drowned, guard: { ...READY, weapon: "spear", fx: 10, fy: -20, sa: 1.4 }, hp: 44, speed: 34, ai: "brawler", range: 64, moves: [THRUST], cool: 1.4, coins: [1, 3], death: "phys" },
-  tidecaller: { name: "TIDECALLER", type: "vessel", pal: VP.drowned, guard: { ...READY, fx: 9, fy: -19, bx: 8, by: -20 }, hp: 130, speed: 28, ai: "caster", moves: [{ ...HEX, events: [ev(0, (a) => geyserAt(a, G.world.player))] }], cool: 2.2, coins: [5, 8], death: "phys", elite: true },
+  tidecaller: { name: "TIDECALLER", type: "vessel", pal: VP.drowned, guard: { ...READY, fx: 9, fy: -19, bx: 8, by: -20 }, hp: 130, speed: 28, ai: "caster", moves: [{ ...HEX, events: [ev(0, (a) => geyserAt(a, G.world.nearestPlayer(a.x, a.y)))] }], cool: 2.2, coins: [5, 8], death: "phys", elite: true },
   frostknight: { name: "RIME KNIGHT", type: "vessel", pal: VP.frost, guard: { ...READY, weapon: "spear", fx: 10, fy: -20, sa: 1.4 }, hp: 50, speed: 34, ai: "brawler", range: 56, moves: [SWEEP], cool: 1.4, coins: [2, 3], death: "ice" },
   yeti: { name: "FROST TITAN", type: "vessel", pal: VP.yeti, guard: { ...READY, weapon: "hammer", fx: 10, fy: -19, sa: 1.2 }, hp: 150, speed: 28, ai: "brawler", range: 58, moves: [SMASH, BOULDER], cool: 1.5, coins: [5, 9], death: "ice", heavy: true, elite: true },
   gunner: { name: "GUNNER", type: "vessel", pal: VP.iron, guard: PISTOL_REST, hp: 36, speed: 34, ai: "gunner", range: 110, moves: [GUNSHOT, GUNSHOT, PISTOLS], cool: 1.6, coins: [1, 3], death: "shock" },
@@ -373,15 +373,20 @@ function enemyTick(e, dt) {
 function targetOf(e) {
   const w = G.world;
   if (e.st.charm) return w.ents.find((o) => o.team === "enemy" && o !== e && !o.dead && o.hittable) ?? null;
-  const p = w.player;
-  return p && !p.dead ? p : null;
+  // a target is kept a while, so a crowd spreads out over the party instead of flip-flopping
+  if (!e.tgt || e.tgt.down || e.tgt.dead || (e.retarget -= 1 / 60) <= 0) {
+    e.tgt = w.nearestPlayer(e.x, e.y);
+    e.retarget = 2 + Math.random() * 2;
+  }
+  return e.tgt;
 }
 function contact(e) {
-  const p = G.world.player;
-  if (!e.def.contact || !p || e.contactCd > 0 || e.st.charm || e.spawnT > 0) return;
-  if (Math.abs(p.x - e.x) < e.r + p.r - 2 && Math.abs(p.y - e.y) < 7) {
-    if (damage(p, e.def.contact, { src: e, status: e.def.touchStatus })) e.contactCd = 1;
-  }
+  if (!e.def.contact || e.contactCd > 0 || e.st.charm || e.spawnT > 0) return;
+  for (const p of G.world.livePlayers())
+    if (Math.abs(p.x - e.x) < e.r + p.r - 2 && Math.abs(p.y - e.y) < 7) {
+      if (damage(p, e.def.contact, { src: e, status: e.def.touchStatus })) e.contactCd = 1;
+      break;
+    }
 }
 
 class EnemyVessel extends Vessel {
@@ -482,7 +487,7 @@ class EnemyCritter extends Critter {
 export function makeEnemy(id, x, y, lvl = 1, elite = false) {
   const base = ENEMIES[id];
   const def = elite && !base.elite ? { ...base, elite: true } : base;
-  const hpK = (1 + (lvl - 1) * 0.28) * (elite && !base.elite ? 2.4 : 1);
+  const hpK = (1 + (lvl - 1) * 0.28) * (elite && !base.elite ? 2.4 : 1) * partyHp();
   const o = { x, y, hp: def.hp * hpK, maxhp: def.hp * hpK, r: def.r ?? 7, h: def.h ?? 36, immune: def.immune, kind: id, facing: x > 160 ? -1 : 1 };
   const e = def.type === "vessel" ? new EnemyVessel(def, o) : new EnemyCritter(def, o);
   e.lvl = lvl;

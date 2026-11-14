@@ -9,13 +9,13 @@ import { World } from "./world.js";
 import { PAINTERS } from "./art.js";
 import { Hud } from "./hud.js";
 import { Player } from "./player.js";
-import { CLASSES } from "./classes.js";
+import { CLASSES, CLASS_ORDER } from "./classes.js";
 import { Run } from "./run.js";
 import { Room, BIOMES, ROOMS_PER_BIOME, prebakeAll } from "./rooms.js";
 import { Ent } from "./entity.js";
 import { Interactable, Door } from "./props.js";
 import { C, text, para, panel } from "./ui.js";
-import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex } from "./menus.js";
+import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu } from "./menus.js";
 import { BOONS } from "./boons.js";
 import { damage, kill, applyStatus } from "./combat.js";
 import { Bench, seedRandom } from "./bench.js";
@@ -68,12 +68,18 @@ G.dbgBlit = (f, d) => blit(f, d.b, d.x, d.y, 1, {});
 
 export function boot(params) {
   G.hud = new Hud();
+  // who's playing: the host alone until others join at the camp (?coop=N starts a test party)
+  G.party = [{ cls: G.save.lastClass, device: null }];
+  if (params.has("coop")) {
+    G.party[0].device = "kbA";
+    for (let i = 1; i < Math.min(4, +params.get("coop") || 2); i++) G.party.push({ cls: CLASS_ORDER[i % CLASS_ORDER.length], device: ["kbB", "pad0", "pad1"][i - 1] });
+  }
   prebakeAll();
   if (params.has("bench")) {
     seedRandom(+(params.get("seed") ?? 1234567));
     return director.set(new Bench(GameScene, +(params.get("bench") || 20)));
   }
-  if (params.has("sandbox")) return director.set(new GameScene(params.get("class") ?? "knight", { biome: +(params.get("biome") ?? 0), room: params.get("room") }));
+  if (params.has("sandbox")) return director.set(new GameScene(G.party.length > 1 ? G.party : params.get("class") ?? "knight", { biome: +(params.get("biome") ?? 0), room: params.get("room") }));
   if (params.has("hub")) return director.set(new HubScene());
   director.set(new TitleScene());
 }
@@ -183,7 +189,7 @@ class HubScene {
       this.overlay = new Controls(() => (this.overlay = null));
     }
   }
-  build(cls = G.save.lastClass, x = 160, y = 156) {
+  build() {
     const w = (this.w = G.world = new World());
     PAINTERS.hub(G.screen.bg);
     w.addWeather("weather/shooting-stars", {});
@@ -193,7 +199,11 @@ class HubScene {
     w.addDecor("fire/torch", 296, FLOOR_TOP + 6, {}, {});
     // stations
     const portal = w.add(new Door(276, FLOOR_TOP + 16, { type: "climb", label: "THE CLIMB", palette: PAL.fire }, { fx: "pickups/power-star", opts: { palette: PAL.fire } }));
-    portal.update = function (dt) { this.age += dt; this.open = 1; const p = G.world.player; if (p && Math.abs(p.x - this.x) < 12 && Math.abs(p.y - this.y) < 8 && !director.pending) startClimb(); };
+    portal.update = function (dt) {
+      this.age += dt;
+      this.open = 1;
+      if (!director.pending && G.world.livePlayers().some((p) => Math.abs(p.x - this.x) < 12 && Math.abs(p.y - this.y) < 8)) startClimb();
+    };
     const st = (x, y, o, fn) => {
       const it = w.add(new Interactable(x, y, o));
       it.interact = fn;
@@ -201,61 +211,88 @@ class HubScene {
     };
     this.stations = [
       st(44, FLOOR_TOP + 12, { fx: "arcane/rune-circle", opts: { palette: PAL.fire }, prompt: "THE EMBER SHRINE (UPGRADES)", label: "SHRINE", labelY: -30 }, () => (this.overlay = new Shrine(() => (this.overlay = null)))),
-      st(98, FLOOR_TOP + 10, { fx: "pickups/loot-beam", opts: { palette: PAL.arcane }, prompt: "THE ALTAR OF VESSELS", label: "VESSELS", labelY: -56 }, () => (this.overlay = new ClassAltar((id, preview) => this.swap(id), () => (this.overlay = null)))),
+      st(98, FLOOR_TOP + 10, { fx: "pickups/loot-beam", opts: { palette: PAL.arcane }, prompt: "VESSELS AND PARTY (1-4 PLAYERS)", label: "PARTY", labelY: -56 }, () => this.openParty()),
       st(214, FLOOR_TOP + 10, { fx: "scifi/hologram", opts: { palette: PAL.ember }, prompt: "THE CODEX OF EFFECTS", label: "CODEX", labelY: -44 }, () => (this.overlay = new Codex(() => { this.overlay = null; PAINTERS.hub(G.screen.bg); }))),
     ];
     w.add(new Dummy(232, 162));
-    const p = new Player(CLASSES[cls] ?? CLASSES.knight, x, y);
-    G.run = this.fakeRun();
-    w.player = w.add(p);
+    w.party = [];
+    this.syncParty();
   }
-  fakeRun() {
-    // the camp has no climb, but the vessel wants stats and hooks
-    const r = new Run(G.save.lastClass);
-    r.godMode = true;
-    r.ult = 100;
-    return r;
-  }
-  swap(id) {
-    const p = this.w.player;
-    this.w.spawnFx("spawn/poof", p.x, p.y, {}, { prio: 2 });
-    p.gone = true;
-    const np = new Player(CLASSES[id], p.x, p.y);
-    np.facing = p.facing;
-    G.run = new Run(id);
+  /** The camp's vessels follow the party: one per slot, each in its chosen class, each on its own device in co-op. */
+  syncParty() {
+    const w = this.w, party = G.party, coop = party.length > 1;
+    const old = w.party ?? [];
+    G.run = new Run(party.map((s) => ({ ...s })));
     G.run.godMode = true;
-    G.run.ult = 100;
-    this.w.player = this.w.add(np);
-    this.w.spawnFx("arcane/blink-in", np.x, np.y, { actor: np.snapshot() }, { prio: 2 });
+    const players = party.map((s, i) => {
+      const prev = old[i], cls = CLASSES[s.cls] ?? CLASSES.knight;
+      if (prev && prev.cls === cls && !!prev.device === coop && prev.device == (coop ? s.device : null)) return prev;
+      if (prev) {
+        prev.gone = true;
+        w.spawnFx("spawn/poof", prev.x, prev.y, {}, { prio: 2 });
+      }
+      const np = new Player(cls, prev?.x ?? 130 + i * 22, prev?.y ?? 152 + (i % 2) * 8, i, coop ? s.device : null);
+      np.facing = prev?.facing ?? 1;
+      w.add(np);
+      w.spawnFx("arcane/blink-in", np.x, np.y, { actor: np.snapshot() }, { prio: 2 });
+      return np;
+    });
+    for (const p of old.slice(party.length)) {
+      p.gone = true;
+      w.spawnFx("spawn/poof", p.x, p.y, {}, { prio: 2 });
+    }
+    w.party = players;
+    w.player = players[0];
+    G.run.players = players;
+    for (const p of players) p.ult = 100;
+  }
+  openParty(joining) {
+    this.overlay = new PartyMenu(() => this.syncParty(), () => (this.overlay = null), joining);
   }
   update(dt) {
     if (this.overlay) return this.overlay.update(dt);
     if (G.input.take("pause")) return (this.overlay = new ListMenu("CAMP", [
       { label: "RESUME", act: () => (this.overlay = null) },
+      { label: "PARTY", act: () => this.openParty() },
       { label: "OPTIONS", act: () => (this.overlay = optionsMenu(() => (this.overlay = null))) },
       { label: "TITLE SCREEN", act: () => director.go(() => director.set(new TitleScene())) },
     ], { onBack: () => (this.overlay = null) }));
-    this.w.update(dt);
-    G.run.ult = Math.min(100, G.run.ult + dt * 10);
-    G.run.hp = G.run.maxHp;
-    const p = this.w.player;
-    let best = null, bd = 30;
-    for (const s of this.stations) {
-      const d = Math.hypot(s.x - p.x, (s.y - p.y) * 0.7);
-      if (d < bd) (bd = d), (best = s);
+    // a gamepad nobody is using, pressing A or START, joins the party
+    const used = new Set(G.party.map((s) => s.device));
+    if (G.party.length === 1 && G.input.lastDevice === "pad") used.add("pad" + (G.input.lastPad ?? 0));
+    if (G.party.length === 1 && G.input.lastDevice !== "pad") used.add("kbA");
+    for (const d of G.input.devices()) {
+      if (used.has(d) || d === "kbA") continue;
+      const c = G.input.device(d);
+      if (G.party.length < 4 && (c.take("attack") || c.take("pause"))) return this.openParty(d);
     }
-    p.interactable = best;
-    G.hud.prompt = best ? `[E] ${best.prompt}` : p.x > 240 ? "THE CLIMB AWAITS" : null;
+    this.w.update(dt);
+    for (const p of this.w.party) {
+      p.ult = Math.min(100, p.ult + dt * 10);
+      p.hp = p.maxHp;
+    }
+    let prompt = null;
+    for (const p of this.w.livePlayers()) {
+      let best = null, bd = 30;
+      for (const s of this.stations) {
+        const d = Math.hypot(s.x - p.x, (s.y - p.y) * 0.7);
+        if (d < bd) (bd = d), (best = s);
+      }
+      p.interactable = best;
+      if (best && !prompt) prompt = `[USE] ${best.prompt}`;
+    }
+    G.hud.prompt = prompt ?? (this.w.livePlayers().some((p) => p.x > 240) ? "THE CLIMB AWAITS" : null);
   }
   draw() {
     if (this.overlay?.fullscreen) return this.overlay.draw();
     this.w.draw(G.screen.frame);
     const S = G.save;
-    text(`EMBERS ${S.embers}`, 314, 5, C.ember, { align: "right" });
-    text(`CLIMBS ${S.stats.runs}  ASCENSIONS ${S.stats.wins}`, 314, 12, C.dim, { align: "right" });
-    text(`CODEX ${seenCount()}/${EFFECT_IDS.length}`, 314, 19, C.dim, { align: "right" });
-    text(CLASSES[S.lastClass].name, 6, 6, C.gold);
-    text("[J] ATTACK  [K] SPECIAL  [L] DASH  [I] ULT", 6, 172, C.dark);
+    const oy = G.party.length > 1 ? 30 : 0;
+    text(`EMBERS ${S.embers}`, 314, oy + 5, C.ember, { align: "right" });
+    text(`CLIMBS ${S.stats.runs}  ASCENSIONS ${S.stats.wins}`, 314, oy + 12, C.dim, { align: "right" });
+    text(`CODEX ${seenCount()}/${EFFECT_IDS.length}`, 314, oy + 19, C.dim, { align: "right" });
+    if (G.party.length === 1) text(CLASSES[S.lastClass].name, 6, 6, C.gold);
+    text(G.party.length > 1 ? `PARTY OF ${G.party.length}  -  THE PARTY ALTAR CHANGES VESSELS` : "[J] ATTACK  [K] SPECIAL  [L] DASH  [I] ULT   CO-OP: A SECOND PAD OR [.] JOINS AT THE ALTAR", 6, 172, C.dark);
     G.hud.draw();
     if (this.overlay) {
       G.screen.dim = 0;
@@ -268,18 +305,21 @@ function startClimb() {
   const S = G.save;
   S.stats.runs++;
   G.persist();
-  director.go(() => director.set(new GameScene(S.lastClass)), "transitions/burn-away");
+  const party = G.party.map((s) => ({ ...s }));
+  director.go(() => director.set(new GameScene(party.length > 1 ? party : party[0].cls)), "transitions/burn-away");
 }
 
 // ---------------------------------------------------------------- the climb
 class GameScene {
-  constructor(clsId, o = {}) {
-    this.clsId = clsId;
+  /** party: a class id, or [{ cls, device }] for local co-op. */
+  constructor(party, o = {}) {
+    this.party = party;
     this.o = o;
   }
   enter() {
-    G.run = this.run = new Run(this.clsId);
-    this.player = new Player(this.run.cls);
+    G.run = this.run = new Run(this.party);
+    this.players = this.run.makePlayers(Player);
+    this.player = this.players[0];
     this.run.biome = this.o.biome ?? 0;
     if (G.debug && this.o.room) this.run.room = +this.o.room;
     this.overlay = null;
@@ -290,11 +330,12 @@ class GameScene {
   }
   startRoom(spec) {
     G.hud.boss = null;
-    this.player.hidden = false;
     this.room = G.room = new Room(this.run, spec);
-    this.world = this.room.build(this.player);
-    this.player.iframe = 1;
-    this.world.spawnFx("impacts/heavy-landing", this.player.x, this.player.y, {}, { prio: 2, delay: 0.25 });
+    this.world = this.room.build(this.players);
+    for (const p of this.players) {
+      p.iframe = 1;
+      this.world.spawnFx("impacts/heavy-landing", p.x, p.y, {}, { prio: 2, delay: 0.25 + p.slot * 0.08 });
+    }
   }
   /** Through a door: the next room, or up into the next realm. */
   nextRoom(spec) {
@@ -336,7 +377,7 @@ class GameScene {
       { label: "RESUME", act: () => (this.overlay = null) },
       { label: "BOONS", act: () => (this.overlay = new BoonList(() => this.pause())) },
       { label: "OPTIONS", act: () => (this.overlay = optionsMenu(() => this.pause())) },
-      { label: "ABANDON CLIMB", act: () => { this.overlay = null; this.run.hp = 0; this.run.playerDown(); } },
+      { label: "ABANDON CLIMB", act: () => { this.overlay = null; this.run.lives = 0; for (const p of this.players) p.dead = true; this.run.over = true; this.onPlayerDeath(); } },
     ], { onBack: () => (this.overlay = null), sub: `${BIOMES[this.run.biome].name} - ROOM ${this.run.room + 1}` });
   }
   update(dt) {
@@ -360,13 +401,14 @@ class GameScene {
     if (this.over) return;
     this.over = true;
     this.overT = 0;
-    const p = this.world.player;
     this.world.slowmo(0.25, 1.5);
     G.screen.flash = 0.5;
     G.screen.flashColor = [255, 60, 60];
     sfx("gameover");
-    this.world.spawnFx("spawn/dissolve-burn", p.x, p.y, { actor: p.snapshot() }, { prio: 2, delay: 0.6 });
-    this.world.after(0.6, () => (p.hidden = true));
+    for (const p of this.players) {
+      this.world.spawnFx("spawn/dissolve-burn", p.x, p.y, { actor: p.snapshot() }, { prio: 2, delay: 0.6 + p.slot * 0.15 });
+      this.world.after(0.6 + p.slot * 0.15, () => (p.hidden = true));
+    }
     G.hud.title("THE EMBER GOES OUT", "", 2.4);
     G.audio.music("gameover");
   }
@@ -436,7 +478,7 @@ class EndScene {
     text(this.won ? "ASCENSION" : "THE EMBER FADES", 160, 22, this.won ? C.gold : C.red, { font: "big", scale: 2, align: "center", a: k });
     panel(80, 50, 160, 92, { glow: this.won ? C.gold : C.ember, a: 0.85 });
     const rows = [
-      ["VESSEL", CLASSES[r.clsId].name], ["REACHED", `${BIOMES[r.biome].name}`], ["ROOMS CLEARED", r.stats_.rooms], ["FOES FELLED", r.kills],
+      [r.size > 1 ? "PARTY" : "VESSEL", r.partySpec.map((s) => CLASSES[s.cls].name).join(" ").slice(0, 30)], ["REACHED", `${BIOMES[r.biome].name}`], ["ROOMS CLEARED", r.stats_.rooms], ["FOES FELLED", r.kills],
       ["BEST COMBO", r.bestCombo], ["WARDENS SLAIN", r.stats_.bosses], ["PARRIES", r.stats_.parries ?? 0], ["TIME", `${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, "0")}`],
     ];
     rows.forEach(([a, b], i) => { text(a, 88, 56 + i * 8, C.dim); text(String(b), 232, 56 + i * 8, C.white, { align: "right" }); });

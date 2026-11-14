@@ -7,12 +7,24 @@ import { Vessel } from "./entity.js";
 import { G, sfx, clampX, clampY } from "./ctx.js";
 import { resolveMoveHit } from "./skills.js";
 import { applyStatus, aoe, damage, inRadius } from "./combat.js";
-import { hex } from "../engine/pfx.js";
+import { hex, PAL, painterFor } from "../engine/pfx.js";
+
+export const PLAYER_COLORS = ["#ff9a3c", "#58b4ec", "#7ee88a", "#ff86e6"];
 
 export class Player extends Vessel {
-  constructor(cls, x = 60, y = 150) {
+  constructor(cls, x = 60, y = 150, slot = 0, device = null) {
     super({ team: "player", isPlayer: true, x, y, facing: 1, pal: vesselPal(cls.pal), base: cls.guard, r: 7, hp: 1, maxhp: 1 });
     this.cls = cls;
+    this.slot = slot;
+    // solo: every device drives you; in co-op, your own device only
+    this.device = device;
+    this.color = hex(PLAYER_COLORS[slot] ?? PLAYER_COLORS[0]) >>> 0;
+    this.maxHp = cls.hp;
+    this.hp = cls.hp;
+    this.ult = 0;
+    this.shield = 0;
+    this.down = false;
+    this.reviveT = 0;
     this.combo = 0;
     this.comboT = 0;
     this.cd = { special: 0, dash: 0 };
@@ -31,6 +43,9 @@ export class Player extends Vessel {
   get run() {
     return G.run;
   }
+  get ctrl() {
+    return this.device ? G.input.device(this.device) : G.input;
+  }
   get dmgMul() {
     return 1;
   }
@@ -41,13 +56,14 @@ export class Player extends Vessel {
   update(dt) {
     this.baseUpdate(dt);
     if (this.iframe > 0) this.iframe -= dt;
-    const inp = G.input, run = this.run;
+    const inp = this.ctrl, run = this.run;
     for (const k in this.cd) if (this.cd[k] > 0) this.cd[k] -= dt;
     if (this.comboT > 0 && (this.comboT -= dt) <= 0) this.combo = 0;
     for (const g of this.ghosts) g.age += dt;
     while (this.ghosts.length && this.ghosts[0].age > 0.2) this.ghosts.shift();
     if (this.dead) return;
     this.moving = false;
+    if (this.down) return this.updateDown(dt);
     if (this.locked) return;
     if (this.stopped || this.stun > 0) {
       if (this.perf && !this.perf.m.armor) this.perf = null;
@@ -83,7 +99,7 @@ export class Player extends Vessel {
       if (this.perf) return;
     }
     // free
-    if (inp.take("ult", 0.1) && run.ult >= 100) return this.ultimate();
+    if (inp.take("ult", 0.1) && this.ult >= 100) return this.ultimate();
     if (inp.take("dash", 0.1) && this.cd.dash <= 0) return this.startDash();
     if (inp.take("special", 0.1)) {
       if (this.cd.special <= 0) return this.special();
@@ -140,7 +156,7 @@ export class Player extends Vessel {
   ultimate() {
     const u = this.cls.ult;
     this.autoAim(200);
-    this.run.ult = 0;
+    this.ult = 0;
     this.perform(u.move);
     G.world.slowmo(0.5, 0.25);
     G.world.spawnFx("lightning/charge-up", this.x, this.y, { actor: this.snapshot() }, { follow: this, life: 0.7, prio: 1 });
@@ -149,7 +165,7 @@ export class Player extends Vessel {
     for (const f of this.run.hooks.onUlt) f(this);
   }
   startDash() {
-    const inp = G.input, [ax, ay] = inp.axis, run = this.run;
+    const inp = this.ctrl, [ax, ay] = inp.axis, run = this.run;
     let dx = ax, dy = ay;
     if (Math.hypot(dx, dy) < 0.2) {
       dx = this.facing;
@@ -214,7 +230,8 @@ export class Player extends Vessel {
     if (this.dead) return kneelPose(this.base);
     if (this.dashT >= 0) return dashPose(this.base);
     if (this.locked && this.castPose) return castPose(this.base, this.age);
-    if (this.run && this.run.hp <= 2 && !this.moving && !this.perf && this.stun <= 0 && Math.floor(this.age * 0.5) % 3 === 0) return { ...this.base, crouch: 5, lean: 4, hy: 1 };
+    if (this.down) return { ...kneelPose(this.base), crouch: 10, lean: 8, hy: 3 };
+    if (this.hp <= 2 && !this.moving && !this.perf && this.stun <= 0 && Math.floor(this.age * 0.5) % 3 === 0) return { ...this.base, crouch: 5, lean: 4, hy: 1 };
     return super.posture();
   }
   drawExtraBack(frame) {
@@ -246,15 +263,16 @@ export class Player extends Vessel {
         w.spawnFx("impacts/parry", this.x, this.y, {}, { prio: 2, layer: "over" });
         w.slowmo(0.25, 0.5);
         sfx("parry");
-        run.ult = Math.min(100, run.ult + 12);
+        this.ult = Math.min(100, this.ult + 12);
         run.stat("parries");
         for (const f of run.hooks.onParry) f(this, info);
       }
       return false;
     }
     if (this.inv > 0) return false;
-    if (run.shield > 0 && !info.unblockable) {
-      run.shield--;
+    if (this.down) return false;
+    if (this.shield > 0 && !info.unblockable) {
+      this.shield--;
       w.spawnFx("impacts/shield-block", this.x, this.y, {}, { flip: this.facing < 0, prio: 2 });
       sfx("block");
       this.iframe = 0.8;
@@ -263,7 +281,7 @@ export class Player extends Vessel {
     }
     let n = Math.max(1, Math.round(amt * (this.cls.armor ?? 1) * run.stats.dmgTaken));
     if (amt <= 0) return false;
-    run.hp -= n;
+    this.hp -= n;
     run.damageTaken += n;
     run.noHitRoom = false;
     this.iframe = 1.1;
@@ -278,7 +296,7 @@ export class Player extends Vessel {
     G.screen.flash = 0.18;
     G.screen.flashColor = [255, 40, 60];
     w.spawnFx("impacts/hit-flash", this.x, this.y, { palette: ["#3a0a14", "#a01824", "#ff5a50", "#ffd8cc", "#ffffff"] }, { follow: this, prio: 2 });
-    run.heartLost(n);
+    run.heartLost(this, n);
     sfx("hurt");
     if (info.elem === "shock") w.spawnFx("scifi/glitch", this.x, this.y, { actor: this.snapshot() }, { follow: this, life: 0.6, prio: 1 });
     if (info.status) {
@@ -286,17 +304,56 @@ export class Player extends Vessel {
       if (Math.random() < p * 0.6) applyStatus(this, s, d * 0.5, 1, info.src);
     }
     for (const f of run.hooks.onHurt) f(this, info);
-    if (run.hp <= 0) run.playerDown();
+    if (this.hp <= 0) run.playerDown(this);
     return true;
   }
   heal(n, quiet) {
-    const run = this.run, before = run.hp;
-    run.hp = Math.min(run.maxHp, run.hp + n);
-    if (run.hp > before && !quiet) {
+    if (this.down) return 0;
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + n);
+    if (this.hp > before && !quiet) {
       G.world.spawnFx("holy/heal", this.x, this.y, { actor: this.snapshot() }, { follow: this, prio: 2 });
       sfx("heal");
     }
-    return run.hp - before;
+    return this.hp - before;
+  }
+  /** Out of hearts in co-op: on your knees until a friend stands by you long enough, or the room is cleared. */
+  goDown() {
+    this.down = true;
+    this.hittable = false;
+    this.perf = null;
+    this.dashT = -1;
+    this.reviveT = 0;
+    this.st = {};
+    G.world.spawnFx("spawn/soul-rise", this.x, this.y, { actor: this.snapshot(), palette: PAL.fire }, { prio: 2 });
+    G.hud?.toast(`P${this.slot + 1} IS DOWN`, "STAND BY THEM TO REKINDLE", PAL.blood);
+  }
+  revive(hp = 2) {
+    this.down = false;
+    this.hittable = true;
+    this.hp = Math.max(1, Math.min(this.maxHp, hp));
+    this.iframe = 2;
+    G.world.spawnFx("spawn/respawn-beam", this.x, this.y, { actor: this.snapshot() }, { follow: this, prio: 2 });
+    sfx("holy", 0.9, 1.2);
+  }
+  updateDown(dt) {
+    // a living teammate standing close rekindles you
+    const helper = G.world.players.find((o) => o !== this && !o.down && !o.dead && Math.hypot(o.x - this.x, (o.y - this.y) * 1.6) < 28);
+    this.reviveT = helper ? this.reviveT + dt : Math.max(0, this.reviveT - dt * 0.5);
+    if (this.reviveT >= 1.8) this.revive(Math.ceil(this.maxHp / 3));
+  }
+  drawExtra(frame) {
+    const coop = G.world?.players?.length > 1;
+    if (!coop || this.hidden) return;
+    // who's who: a tag in your color over your head, a ring while you're being rekindled
+    const p = painterFor(frame), y = this.y - this.z - 46;
+    p.text(`P${this.slot + 1}`, this.x, y, this.color, { align: "center", outline: 0xff0b0a10 });
+    p.px(this.x, y + 7, this.color);
+    p.light(this.x, y + 3, this.color, 0.4);
+    if (this.down) {
+      const k = this.reviveT / 1.8;
+      for (let i = 0; i < 24; i++) if (i / 24 < k || Math.floor(G.time * 4) & 1) p.dot(this.x + Math.cos((i / 24) * 6.283 - 1.57) * 12, this.y - 2 + Math.sin((i / 24) * 6.283 - 1.57) * 4, i / 24 < k ? this.color : 0xff4a4462, 1);
+    }
   }
 }
 export { aoe };

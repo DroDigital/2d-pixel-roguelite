@@ -61,7 +61,7 @@ export class Bench {
       I.stamp.attack = I.time + 0.02;
       if (Math.floor(this.t * 2) % 7 === 0) I.stamp.special = I.time + 0.02;
       if (Math.floor(this.t * 10) % 37 === 0) {
-        G.run.ult = 100;
+        p.ult = 100;
         I.stamp.ult = I.time + 0.02;
       }
       if (Math.floor(this.t * 10) % 23 === 0 && w.fx.list.length < 50) w.spawnFx("explosions/big-explosion", 60 + Math.random() * 200, FLOOR_TOP + 20 + Math.random() * 30, {}, { prio: 2 });

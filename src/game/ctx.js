@@ -11,6 +11,14 @@ export const FLOOR_TOP = 118, FLOOR_BOT = 172, X_MIN = 14, X_MAX = 306;
 export const clampX = (x) => Math.max(X_MIN, Math.min(X_MAX, x));
 export const clampY = (y) => Math.max(FLOOR_TOP + 2, Math.min(FLOOR_BOT, y));
 
+/** How many are climbing together (1 to 4). */
+export const partySize = () => G.run?.size ?? 1;
+/** Health multiplier for foes facing the party: +0.6 per extra player for foes, or k4 in total at four players (bosses use 3.1). */
+export function partyHp(k4 = 0) {
+  const n = partySize();
+  return k4 ? 1 + ((k4 - 1) * (n - 1)) / 3 : 1 + 0.6 * (n - 1);
+}
+
 export function sfx(name, k = 1, p = 1) {
   G.audio?.play(name, k, p);
 }

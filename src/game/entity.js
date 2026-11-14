@@ -265,8 +265,8 @@ export class Pickup extends Ent {
     this.vx *= Math.pow(0.05, dt);
     this.vy *= Math.pow(0.05, dt);
     this.clampPos();
-    const p = G.world.player;
-    if (!p || p.dead || this.age < (this.delay ?? 0.4)) return;
+    const p = G.world.nearestPlayer(this.x, this.y);
+    if (!p || this.age < (this.delay ?? 0.4)) return;
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy * 1.5);
     const mag = this.magnet * (G.run?.stats.magnet ?? 1);
     if (this.auto || d < mag) {

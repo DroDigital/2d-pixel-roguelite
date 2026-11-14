@@ -161,23 +161,24 @@ export class Room {
     this.label = this.biome.name;
     this.pips = [run.room, ROOMS_PER_BIOME + 1];
   }
-  build(player) {
+  /** players: the party (host first); everyone drops in at the left of the room. */
+  build(players) {
+    if (!Array.isArray(players)) players = [players];
+    const player = players[0];
     const w = (G.world = new World()), B = this.biome, run = this.run;
     PAINTERS[B.paint](G.screen.bg, run.biome * 7 + run.room * 13 + 1);
     B.decor(w);
     // bake what this realm will need now, while the transition covers the screen
     if (!pools.current) for (const [id, o, fps] of realmBakes(B)) bake(id, o, fps);
     for (const [id, o] of B.weather(this.type)) w.addWeather(id, o);
-    w.player = w.add(player);
-    player.x = 40;
-    player.y = 150;
-    player.facing = 1;
-    player.z = 70;
-    player.vz = -40;
-    player.perf = null;
-    player.dashT = -1;
-    player.st = {};
-    player.locked = false;
+    w.player = player;
+    w.party = players;
+    players.forEach((p, i) => {
+      w.add(p);
+      Object.assign(p, { x: 40 + (i % 2) * 18, y: 134 + i * 11, facing: 1, z: 70 + i * 12, vz: -40, perf: null, dashT: -1, st: {}, locked: false, hidden: false, gone: false });
+      // what belonged to the last room's world goes with it
+      Object.assign(p, { ward: null, aegisFx: null, fieldFx: null, ballTick: null, skullTick: null, interactable: null });
+    });
     const lvl = this.lvl = 1 + run.biome * 1.6 + run.room * 0.35;
     if (["combat", "elite"].includes(this.type)) {
       for (const [kind, o] of B.props()) {
@@ -188,7 +189,7 @@ export class Room {
       this.planWaves(lvl);
     }
     this.setupSpecial(w, player);
-    for (const b of run.boons) b.room?.(run, player);
+    for (const p of run.alive()) for (const b of run.boons) b.room?.(run, p);
     for (const f of run.hooks.onRoomStart) f(run, player);
     sfx("door", 0.6);
     if (B.id === "foundry" && this.type !== "boss") w.after(0.8, () => w.spawnFx("scifi/scanner", player.x, player.y, { actor: player.snapshot() }, { follow: player, prio: 1, life: 2.4 }));
@@ -198,7 +199,8 @@ export class Room {
   }
   planWaves(lvl) {
     const B = this.biome, run = this.run;
-    let budget = 4 + run.biome * 2.2 + run.room * 1.2;
+    // more foes for a bigger party: +45% per extra player
+    let budget = (4 + run.biome * 2.2 + run.room * 1.2) * (1 + 0.45 * (run.size - 1));
     const nWaves = this.type === "elite" ? 2 : run.room === 0 && run.biome === 0 ? 2 : 2 + (chance(0.4) ? 1 : 0);
     for (let k = 0; k < nWaves; k++) {
       const wave = [];
@@ -212,20 +214,21 @@ export class Room {
       while (b > 0.5 && guard++ < 40) {
         const id = pick(pool), c = COST(id);
         if (c > b + 0.5) continue;
-        wave.push({ id, elite: run.biome + run.room > 2 && chance(0.05 + run.biome * 0.03) });
+        wave.push({ id, elite: run.biome + run.room > 2 && chance(0.05 + run.biome * 0.03 + 0.03 * (run.size - 1)) });
         b -= c;
       }
       this.waves.push(wave);
     }
   }
   spawnWave() {
-    const wave = this.waves.shift(), w = G.world, p = w.player;
+    const wave = this.waves.shift(), w = G.world;
     wave.forEach((o, i) => {
       let x, y, tries = 0;
+      // somewhere no one is standing
       do {
         x = rnd(40, 290);
         y = rnd(FLOOR_TOP + 6, FLOOR_BOT - 4);
-      } while (Math.hypot(x - p.x, (y - p.y) * 2) < 80 && tries++ < 20);
+      } while (w.players.some((p) => Math.hypot(x - p.x, (y - p.y) * 2) < 70) && tries++ < 30);
       const e = makeEnemy(o.id, x, y, this.lvl, o.elite);
       w.after(i * 0.18, () => summon(e, this.biome.spawn));
     });
@@ -243,15 +246,19 @@ export class Room {
       }
       if (!this.waves.length && alive === 0 && this.fighting && this.t > 1.5 && !w.ents.some((e) => e.spawnT > 0)) this.clear();
     }
-    // the nearest thing you can use
-    let best = null, bd = 22;
-    for (const it of this.interactables) {
-      if (it.used || it.gone) continue;
-      const d = Math.hypot(it.x - p.x, (it.y - p.y) * 1.6);
-      if (d < bd) (bd = d), (best = it);
+    // the nearest thing each player can use
+    let prompt = null;
+    for (const q of w.livePlayers()) {
+      let best = null, bd = 22;
+      for (const it of this.interactables) {
+        if (it.used || it.gone) continue;
+        const d = Math.hypot(it.x - q.x, (it.y - q.y) * 1.6);
+        if (d < bd) (bd = d), (best = it);
+      }
+      q.interactable = best;
+      if (best && !prompt) prompt = (w.players.length > 1 ? `P${q.slot + 1} ` : "") + `[USE] ${best.prompt}`;
     }
-    p.interactable = best;
-    G.hud.prompt = best ? `[E] ${best.prompt}` : null;
+    G.hud.prompt = prompt;
     this.boss?.updateRoom?.(dt);
   }
   /** The room falls quiet: a ribbon, the reward, then the way on. */
@@ -261,6 +268,8 @@ export class Room {
     this.fighting = false;
     const w = G.world, run = this.run, p = w.player;
     run.stat("rooms");
+    // the fallen get back up when the room falls quiet
+    for (const q of run.players) if (q.down) q.revive(Math.ceil(q.maxHp / 3));
     for (const f of run.hooks.onRoomClear) f(run, p);
     w.slowmo(0.35, 0.5);
     sfx("clear");
@@ -283,12 +292,12 @@ export class Room {
       for (let i = 0; i < 18 + run.biome * 4; i++) w.add(new Pickup({ x, y, z: 20, vx: rnd(-90, 90), vy: rnd(-35, 35), vz: rnd(90, 160), ...coin(2) }));
       done();
     } else if (kind === "heart") {
-      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/heart-pickup", fxOpts: REWARD_ICON.heart().opts, magnet: 0, delay: 0.6, onTake: (p) => { run.maxHp += 2; p.heal(2); G.world.spawnFx("ui/level-up", p.x, p.y, { text: "+1 HEART", actor: p.snapshot() }, { follow: p, prio: 2 }); sfx("powerup"); done(); } }));
+      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/heart-pickup", fxOpts: REWARD_ICON.heart().opts, magnet: 0, delay: 0.6, onTake: () => { run.each((p) => { p.maxHp += 2; p.heal(2, true); G.world.spawnFx("ui/level-up", p.x, p.y, { text: "+1 HEART", actor: p.snapshot() }, { follow: p, prio: 2 }); }); sfx("powerup"); done(); } }));
     } else if (kind === "embers") {
       for (let i = 0; i < 5 + run.biome; i++) w.add(new Pickup({ x, y, z: 20, vx: rnd(-70, 70), vy: rnd(-30, 30), vz: rnd(90, 150), ...ember() }));
       done();
     } else if (kind === "ult") {
-      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/xp-orb", magnet: 0, delay: 0.6, onTake: (p) => { run.ult = 100; run.stats.ultGain *= 1.1; G.world.spawnFx("arcane/mana-burst", p.x, p.y, {}, { prio: 2 }); sfx("powerup"); done(); } }));
+      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/xp-orb", magnet: 0, delay: 0.6, onTake: () => { run.stats.ultGain *= 1.1; run.each((p) => { p.ult = 100; G.world.spawnFx("arcane/mana-burst", p.x, p.y, {}, { prio: 2 }); }); sfx("powerup"); done(); } }));
     }
   }
   openDoors() {
@@ -309,10 +318,11 @@ export class Room {
   }
   leave(spec, door) {
     this.leaving = true;
-    const p = G.world.player;
-    p.locked = true;
-    G.world.spawnFx(this.biome.id === "foundry" ? "scifi/warp-out" : "arcane/blink-out", p.x, p.y, { actor: p.snapshot() }, { prio: 2, flip: p.facing < 0 });
-    p.hidden = true;
+    for (const p of G.world.players) {
+      p.locked = true;
+      if (!p.down) G.world.spawnFx(this.biome.id === "foundry" ? "scifi/warp-out" : "arcane/blink-out", p.x, p.y, { actor: p.snapshot() }, { prio: 2, flip: p.facing < 0 });
+      p.hidden = true;
+    }
     sfx("portal");
     G.world.after(0.5, () => G.scene.nextRoom(spec));
   }
@@ -361,8 +371,7 @@ export class Room {
       const fire = new Interactable(160, 150, { prompt: "REST BY THE FIRE (HEAL HALF)" });
       fire.interact = () => {
         fire.used = true;
-        const n = Math.ceil(run.maxHp / 2);
-        p.heal(n);
+        run.each((q) => q.heal(Math.ceil(q.maxHp / 2)));
         w.spawnFx("nature/healing-bloom", p.x, p.y, {}, { prio: 2 });
         w.spawnFx("holy/heal-aoe", 160, 150, {}, { prio: 2 });
         G.hud.toast("RESTED", "THE EMBER BURNS BRIGHTER", PAL.fire);
@@ -381,16 +390,16 @@ export class Room {
     } else if (t === "shop") {
       w.addDecor("scifi/hologram", 160, 132, { palette: PAL.ember }, {});
       const items = [
-        { name: "VIAL OF EMBERS (HEAL 2 HEARTS)", price: 25, fx: "pickups/potion", opts: {}, buy: () => p.heal(4) },
-        { name: "HEART VESSEL (+1 MAX HEART)", price: 55, fx: "pickups/heart-pickup", opts: REWARD_ICON.heart().opts, buy: () => { run.maxHp += 2; p.heal(2, true); } },
+        { name: "VIAL OF EMBERS (HEAL 2 HEARTS)", price: 25, fx: "pickups/potion", opts: {}, buy: (it, b) => b.heal(4) },
+        { name: "HEART VESSEL (+1 MAX HEART)", price: 55, fx: "pickups/heart-pickup", opts: REWARD_ICON.heart().opts, buy: (it, b) => { b.maxHp += 2; b.heal(2, true); } },
         { name: "A BOON OF YOUR CHOOSING", price: 70, fx: "pickups/power-star", opts: { palette: PAL.gold }, buy: (it) => G.scene.openBoons(null, 1) },
-        { name: "FOCUS SHARD (FILL ULTIMATE)", price: 30, fx: "pickups/xp-orb", opts: {}, buy: () => (run.ult = 100) },
-        { name: "AEGIS CHARM (+2 SHIELDS)", price: 40, fx: "pickups/crystal-shard", opts: { palette: PAL.ice }, buy: () => (run.shield += 2) },
+        { name: "FOCUS SHARD (FILL ULTIMATE)", price: 30, fx: "pickups/xp-orb", opts: {}, buy: (it, b) => (b.ult = 100) },
+        { name: "AEGIS CHARM (+2 SHIELDS)", price: 40, fx: "pickups/crystal-shard", opts: { palette: PAL.ice }, buy: (it, b) => (b.shield += 2) },
       ];
       shuffle(items).slice(0, 4).forEach((it, i) => {
         const x = 70 + i * 60, price = Math.round(it.price * (1 + run.biome * 0.15));
         const o = new Interactable(x, 158, { fx: it.fx, opts: it.opts, prompt: `BUY ${it.name} - ${price}G`, price, yoff: -8 });
-        o.interact = () => {
+        o.interact = (buyer = p) => {
           if (run.coins < price) {
             sfx("nope");
             G.hud.prompt = "NOT ENOUGH GOLD";
@@ -402,7 +411,7 @@ export class Room {
           w.spawnFx("pickups/collect-burst", x, 150, {}, { prio: 1 });
           sfx("coin");
           sfx("powerup", 0.6);
-          it.buy(it);
+          it.buy(it, buyer);
         };
         this.interactables.push(w.add(o));
       });
@@ -410,12 +419,12 @@ export class Room {
     } else if (t === "shrine") {
       w.spawnFx("arcane/rune-circle", 160, 150, { palette: PAL.blood }, { layer: "floor", prio: 2 });
       const sh = new Interactable(160, 150, { fx: "pickups/crystal-shard", opts: { palette: PAL.blood }, yoff: -26, prompt: "OFFER A HEART FOR A RARE BOON" });
-      sh.interact = () => {
-        if (run.maxHp <= 2) return sfx("nope");
+      sh.interact = (b = p) => {
+        if (b.maxHp <= 2) return sfx("nope");
         sh.used = true;
-        run.maxHp -= 2;
-        run.hp = Math.min(run.hp, run.maxHp);
-        w.spawnFx("shadow/curse", p.x, p.y, { actor: p.snapshot() }, { follow: p, prio: 2 });
+        b.maxHp -= 2;
+        b.hp = Math.min(b.hp, b.maxHp);
+        w.spawnFx("shadow/curse", b.x, b.y, { actor: b.snapshot() }, { follow: b, prio: 2 });
         w.spawnFx("shadow/hex-sigil", 160, 150, {}, { layer: "floor", prio: 2 });
         sfx("dark");
         w.after(1.2, () => G.scene.openBoons(null, 2, later));
@@ -454,7 +463,7 @@ export class Room {
       } else if (roll === "fountain") {
         w.addDecor("water/fountain", 160, 146, {}, { solid: 12 });
         const f = new Interactable(160, 150, { prompt: "DRINK FROM THE FOUNTAIN" });
-        f.interact = () => { f.used = true; p.heal(run.maxHp); run.ult = 100; w.spawnFx("water/splash", p.x, p.y, {}, { prio: 2 }); G.hud.toast("REFRESHED", "HEARTS AND FOCUS RESTORED", PAL.water); later(); };
+        f.interact = () => { f.used = true; run.each((q) => { q.heal(q.maxHp); q.ult = 100; }); w.spawnFx("water/splash", p.x, p.y, {}, { prio: 2 }); G.hud.toast("REFRESHED", "HEARTS AND FOCUS RESTORED", PAL.water); later(); };
         this.interactables.push(w.add(f));
       } else if (roll === "fireworks") {
         G.hud.toast("A CELEBRATION", "FOR NO REASON AT ALL", PAL.candy);
