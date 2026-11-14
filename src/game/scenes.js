@@ -5,6 +5,7 @@ import { PAL, hex, painterFor, Target, seenCount, EFFECT_IDS } from "../engine/p
 import { FxManager } from "../engine/fxm.js";
 import { still, blit, bake } from "../engine/bake.js";
 import { G, sfx, rnd, pick, FLOOR_TOP } from "./ctx.js";
+import { t, L, isCJK } from "./i18n.js";
 import { World } from "./world.js";
 import { PAINTERS } from "./art.js";
 import { Hud } from "./hud.js";
@@ -16,6 +17,9 @@ import { Ent } from "./entity.js";
 import { Interactable, Door } from "./props.js";
 import { C, text, para, panel } from "./ui.js";
 import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu } from "./menus.js";
+
+// the menus, for tools/screens.mjs (screenshots of every screen in every language)
+G.ui = { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu };
 import { BOONS } from "./boons.js";
 import { damage, kill, applyStatus } from "./combat.js";
 import { Bench, seedRandom } from "./bench.js";
@@ -279,7 +283,7 @@ class HubScene {
         if (d < bd) (bd = d), (best = s);
       }
       p.interactable = best;
-      if (best && !prompt) prompt = `[USE] ${best.prompt}`;
+      if (best && !prompt) prompt = t("[USE] {0}", best.prompt);
     }
     G.hud.prompt = prompt ?? (this.w.livePlayers().some((p) => p.x > 240) ? "THE CLIMB AWAITS" : null);
   }
@@ -288,11 +292,11 @@ class HubScene {
     this.w.draw(G.screen.frame);
     const S = G.save;
     const oy = G.party.length > 1 ? 30 : 0;
-    text(`EMBERS ${S.embers}`, 314, oy + 5, C.ember, { align: "right" });
-    text(`CLIMBS ${S.stats.runs}  ASCENSIONS ${S.stats.wins}`, 314, oy + 12, C.dim, { align: "right" });
-    text(`CODEX ${seenCount()}/${EFFECT_IDS.length}`, 314, oy + 19, C.dim, { align: "right" });
+    text(t("EMBERS {0}", S.embers), 314, oy + 5, C.ember, { align: "right" });
+    text(t("CLIMBS {0}  ASCENSIONS {1}", S.stats.runs, S.stats.wins), 314, oy + 12, C.dim, { align: "right" });
+    text(t("CODEX {0}/{1}", seenCount(), EFFECT_IDS.length), 314, oy + 19, C.dim, { align: "right" });
     if (G.party.length === 1) text(CLASSES[S.lastClass].name, 6, 6, C.gold);
-    text(G.party.length > 1 ? `PARTY OF ${G.party.length}  -  THE PARTY ALTAR CHANGES VESSELS` : "[J] ATTACK  [K] SPECIAL  [L] DASH  [I] ULT   CO-OP: A SECOND PAD OR [.] JOINS AT THE ALTAR", 6, 172, C.dark);
+    text(G.party.length > 1 ? t("PARTY OF {0}  -  THE PARTY ALTAR CHANGES VESSELS", G.party.length) : "[J] ATTACK  [K] SPECIAL  [L] DASH  [I] ULT   CO-OP: 2ND PAD OR [.] AT THE ALTAR", 6, 172, C.dark, { max: 310 });
     G.hud.draw();
     if (this.overlay) {
       G.screen.dim = 0;
@@ -344,6 +348,7 @@ class GameScene {
       if (spec.type === "ascend") {
         run.biome++;
         run.room = 0;
+        run.newRealm();
         this.startRoom({ type: "combat", reward: { kind: "boon", elem: pick(["fire", "ice", "shock", "holy", "shadow", "poison"]) } });
       } else {
         run.room++;
@@ -378,7 +383,7 @@ class GameScene {
       { label: "BOONS", act: () => (this.overlay = new BoonList(() => this.pause())) },
       { label: "OPTIONS", act: () => (this.overlay = optionsMenu(() => this.pause())) },
       { label: "ABANDON CLIMB", act: () => { this.overlay = null; this.run.lives = 0; for (const p of this.players) p.dead = true; this.run.over = true; this.onPlayerDeath(); } },
-    ], { onBack: () => (this.overlay = null), sub: `${BIOMES[this.run.biome].name} - ROOM ${this.run.room + 1}` });
+    ], { onBack: () => (this.overlay = null), sub: t("{0} - ROOM {1}", BIOMES[this.run.biome].name, this.run.room + 1) });
   }
   update(dt) {
     if (this.overlay) {
@@ -478,12 +483,14 @@ class EndScene {
     text(this.won ? "ASCENSION" : "THE EMBER FADES", 160, 22, this.won ? C.gold : C.red, { font: "big", scale: 2, align: "center", a: k });
     panel(80, 50, 160, 92, { glow: this.won ? C.gold : C.ember, a: 0.85 });
     const rows = [
-      [r.size > 1 ? "PARTY" : "VESSEL", r.partySpec.map((s) => CLASSES[s.cls].name).join(" ").slice(0, 30)], ["REACHED", `${BIOMES[r.biome].name}`], ["ROOMS CLEARED", r.stats_.rooms], ["FOES FELLED", r.kills],
+      [r.size > 1 ? "PARTY" : "VESSEL", r.partySpec.map((s) => L(CLASSES[s.cls].name)).join(" ").slice(0, 30)], ["REACHED", `${BIOMES[r.biome].name}`], ["ROOMS CLEARED", r.stats_.rooms], ["FOES FELLED", r.kills],
       ["BEST COMBO", r.bestCombo], ["WARDENS SLAIN", r.stats_.bosses], ["PARRIES", r.stats_.parries ?? 0], ["TIME", `${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, "0")}`],
     ];
-    rows.forEach(([a, b], i) => { text(a, 88, 56 + i * 8, C.dim); text(String(b), 232, 56 + i * 8, C.white, { align: "right" }); });
-    text(`EMBERS CARRIED HOME: ${this.earned}`, 160, 124, C.ember, { align: "center" });
-    text(`BOONS: ${r.boons.length}`, 160, 132, C.dim, { align: "center" });
+    const rh = isCJK() ? 9 : 8;
+    rows.forEach(([a, b], i) => { text(a, 88, 56 + i * rh, C.dim, { max: 100 }); text(String(b), 232, 56 + i * rh, C.white, { align: "right", max: 140 }); });
+    const ey = 60 + rows.length * rh;
+    text(t("EMBERS CARRIED HOME: {0}", this.earned), 160, ey, C.ember, { align: "center" });
+    text(t("BOONS: {0}", r.boons.length), 160, ey + rh, C.dim, { align: "center" });
     if (this.t > 1.5 && Math.floor(this.t * 2) & 1) text("PRESS ENTER TO RETURN TO CAMP", 160, 156, C.white, { align: "center" });
     G.hud.hidden = true;
     G.hud.draw();

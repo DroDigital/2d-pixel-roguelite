@@ -4,6 +4,7 @@
 import { PAL, hex, categories, effects, isSeen, seenCount, EFFECT_IDS, createFx, createAct, clearFrame, painterFor, backdrop, fxMod } from "../engine/pfx.js";
 import { bake, blit } from "../engine/bake.js";
 import { G, sfx } from "./ctx.js";
+import { t, L, LANGS, lang_, setLang, isCJK } from "./i18n.js";
 import { C, text, para, panel, bar, icon, wrap, width } from "./ui.js";
 import { ELEM_PAL, ELEM_NAME, RARITY_COLOR } from "./boons.js";
 import { CLASSES, CLASS_ORDER } from "./classes.js";
@@ -18,6 +19,8 @@ const nav = () => {
 const persist = () => G.persist?.();
 
 /** A vertical list menu. items: [{ label, act, value?() , left?(), right?() }] */
+const RARITY_NAME = { common: "COMMON", rare: "RARE", epic: "EPIC", legendary: "LEGENDARY" };
+
 export class ListMenu {
   constructor(title, items, o = {}) {
     Object.assign(this, { title, items, i: 0, t: 0, onBack: o.onBack, w: o.w ?? 150, sub: o.sub });
@@ -41,7 +44,7 @@ export class ListMenu {
     if (this.sub) text(this.sub, 160, y + 18, C.dim, { align: "center" });
     this.items.forEach((it, k) => {
       const yy = y + 22 + (this.sub ? 8 : 0) + k * 11, sel = k === this.i;
-      const label = it.value ? `${it.label}: ${it.value()}` : it.label;
+      const label = it.value ? `${L(it.label)}: ${L(String(it.value()))}` : it.label;
       if (sel) {
         painterFor(G.screen.hud).rect(x + 6, yy - 2, this.w - 12, 9, hex("#2a2040") >>> 0);
         text(">", x + 10 + Math.floor(Math.sin(this.t * 8)), yy, C.ember);
@@ -94,13 +97,13 @@ export class BoonPick {
       const rc = hex(RARITY_COLOR[b.rarity]) >>> 0;
       panel(x, y, cw, 128, { edge: sel ? rc : C.edge, hi: sel ? C.white : C.edgeHi, glow: sel ? rc : undefined, a: 0.95 });
       icon("pickups/crystal-shard", x + cw / 2, y + 42, this.t + i, { palette: pal }, { light: sel ? 1 : 0.5 });
-      text(b.rarity, x + cw / 2, y + 48, rc, { align: "center" });
+      text(RARITY_NAME[b.rarity], x + cw / 2, y + 48, rc, { align: "center" });
       const nl = wrap(b.name, cw - 8, "mini");
       nl.forEach((l, j) => text(l, x + cw / 2, y + 56 + j * 7, C.white, { align: "center" }));
       text(ELEM_NAME[b.elem] ?? "", x + cw / 2, y + 4, hex(pal[Math.floor(pal.length * 0.7)]) >>> 0, { align: "center" });
       para(b.desc, x + 5, y + 60 + nl.length * 7, cw - 10, sel ? C.text : C.dim, { align: "center" });
     });
-    const hint = `[ARROWS] CHOOSE   [ENTER] TAKE${this.reroll && G.run.rerolls > 0 ? `   [E] REROLL (${G.run.rerolls})` : ""}`;
+    const hint = t("[ARROWS] CHOOSE   [ENTER] TAKE") + (this.reroll && G.run.rerolls > 0 ? "   " + t("[E] REROLL ({0})", G.run.rerolls) : "");
     text(hint, 160, 166, C.dim, { align: "center" });
   }
 }
@@ -128,13 +131,14 @@ export class BoonList {
       text(ELEM_NAME[b.elem], x, y + 6, hex(pal[5]) >>> 0, { outline: false });
     });
     const s = run.stats;
-    text(`DMG ${Math.round(s.dmg * 100)}%  CRIT ${Math.round(s.crit * 100)}%  SPEED ${Math.round(s.speed * 100)}%`, 160, 158, C.dim, { align: "center" });
+    text(t("DMG {0}%  CRIT {1}%  SPEED {2}%", Math.round(s.dmg * 100), Math.round(s.crit * 100), Math.round(s.speed * 100)), 160, 158, C.dim, { align: "center" });
   }
 }
 
 export function optionsMenu(onBack) {
   const S = G.save.settings, A = G.audio;
-  const vol = (k) => ({ label: k.toUpperCase(), value: () => Math.round(S[k] * 10), left: () => set(k, -0.1), right: () => set(k, 0.1), act: () => set(k, 0.1) });
+  const VOL = { master: "VOLUME", music: "MUSIC", sfx: "SOUND EFFECTS" };
+  const vol = (k) => ({ label: VOL[k], value: () => Math.round(S[k] * 10), left: () => set(k, -0.1), right: () => set(k, 0.1), act: () => set(k, 0.1) });
   const set = (k, d) => {
     S[k] = Math.max(0, Math.min(1, Math.round((S[k] + d) * 10) / 10));
     A.vol[k] = S[k];
@@ -143,13 +147,20 @@ export function optionsMenu(onBack) {
   };
   S.glow ??= true;
   const tog = (label, k, after) => ({ label, value: () => (S[k] ? "ON" : "OFF"), act: () => { S[k] = !S[k]; after?.(); persist(); }, left: () => { S[k] = !S[k]; after?.(); persist(); }, right: () => { S[k] = !S[k]; after?.(); persist(); } });
+  const cycle = (d) => {
+    const i = LANGS.findIndex((l) => l.id === lang_()), next = LANGS[(i + d + LANGS.length) % LANGS.length].id;
+    S.lang = next;
+    setLang(next);
+    persist();
+  };
   const m = new ListMenu("OPTIONS", [
+    { label: "LANGUAGE", value: () => LANGS.find((l) => l.id === lang_()).name, left: () => cycle(-1), right: () => cycle(1), act: () => cycle(1) },
     vol("master"), vol("music"), vol("sfx"),
     { label: "SCREEN SHAKE", value: () => Math.round(S.shake * 100) + "%", left: () => (S.shake = Math.max(0, S.shake - 0.25), persist()), right: () => (S.shake = Math.min(1.5, S.shake + 0.25), persist()), act: () => (S.shake = S.shake >= 1.5 ? 0 : S.shake + 0.25, persist()) },
     tog("LOW EFFECTS", "lowfx"),
     tog("PIXEL PERFECT", "pixelPerfect", () => { G.screen.pixelPerfect = S.pixelPerfect; G.screen.fit(); }),
     ...(G.screen.gl ? [tog("GLOW", "glow", () => (G.screen.glow = S.glow)), tog("SCANLINES", "scanlines", () => (G.screen.scanlines = S.scanlines))] : []),
-    { label: "RENDERER", value: () => `${G.screen.kind.toUpperCase()}${G.workers ? ` + ${G.workers.size + 1} CORES` : ""}` },
+    { label: "RENDERER", value: () => `${G.screen.kind.toUpperCase()}${G.workers ? " + " + t("{0} CORES", G.workers.size + 1) : ""}` },
     ...(G.gpuName ? [{ label: "GPU", value: () => G.gpuName.slice(0, 26).toUpperCase() }] : []),
     { label: "FULLSCREEN", act: () => (window.desktop ? window.desktop.toggleFullscreen() : document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()) },
     { label: "BACK", act: onBack },
@@ -168,12 +179,15 @@ export class Controls {
     return true;
   }
   draw() {
-    panel(40, 20, 240, 140, { glow: C.ember });
-    text("HOW TO PLAY", 160, 27, C.gold, { align: "center", font: "big" });
+    panel(24, 8, 272, 166, { glow: C.ember });
+    text("HOW TO PLAY", 160, 15, C.gold, { align: "center", font: "big" });
     const rows = [["MOVE", "WASD / ARROWS / LEFT STICK"], ["ATTACK (COMBO)", "J / Z / A"], ["SPECIAL", "K / X / X"], ["DASH (I-FRAMES)", "L / C / SPACE / SHIFT / B"], ["ULTIMATE", "I / V / Y"], ["USE", "E / F / LB"], ["PAUSE", "ESC / P / START"]];
-    rows.forEach(([a, b], i) => { text(a, 56, 44 + i * 10, C.ember); text(b, 150, 44 + i * 10, C.text); });
-    para("DASH JUST BEFORE A BLOW LANDS TO PARRY IT. FOES GLOW RED AS THEY WIND UP. CLEAR ROOMS, PICK BOONS, CLIMB FIVE REALMS. EMBERS YOU CARRY HOME BUY POWER FOR THE NEXT CLIMB.", 56, 114, 208, C.dim);
-    para("CO-OP 1-4: AT THE CAMP, PRESS A ON ANOTHER PAD OR [.] (ARROWS PLAYER) TO JOIN. STAND OVER A FALLEN FRIEND TO REKINDLE THEM.", 56, 138, 208, C.ember);
+    const lh = isCJK() ? 11 : 9;
+    rows.forEach(([a, b], i) => { text(a, 40, 32 + i * lh, C.ember); text(b, 150, 32 + i * lh, C.text); });
+    // the two paragraphs stack, however long a language makes them
+    let y = 36 + rows.length * lh;
+    y += para("DASH JUST BEFORE A BLOW LANDS TO PARRY IT. FOES GLOW RED AS THEY WIND UP. CLEAR ROOMS, PICK BOONS, CLIMB FIVE REALMS. EMBERS YOU CARRY HOME BUY POWER FOR THE NEXT CLIMB.", 40, y, 240, C.dim) + 3;
+    para("CO-OP 1-4: AT THE CAMP, PRESS A ON ANOTHER PAD OR [.] (ARROWS PLAYER) TO JOIN. HOLD USE BESIDE A DOWNED FRIEND TO REVIVE THEM.", 40, y, 240, C.ember);
   }
 }
 
@@ -219,14 +233,14 @@ export class ClassAltar {
   draw() {
     const id = CLASS_ORDER[this.i], cls = CLASSES[id], S = G.save, own = S.unlocked[id];
     panel(150, 18, 160, 132, { glow: C.ember });
-    text("< " + cls.name + " >", 230, 25, C.gold, { align: "center", font: "big" });
+    text("< " + L(cls.name) + " >", 230, 25, C.gold, { align: "center", font: "big" });
     text(cls.title, 230, 36, C.dim, { align: "center" });
     para(cls.desc, 158, 46, 144, C.text);
-    text(`HEARTS ${cls.hp / 2}   SPEED ${cls.speed}`, 158, 88, C.blue);
-    text(`SPECIAL: ${cls.special.name}`, 158, 96, C.text);
-    text(`ULTIMATE: ${cls.ult.name}`, 158, 104, C.text);
+    text(t("HEARTS {0}   SPEED {1}", cls.hp / 2, cls.speed), 158, 88, C.blue);
+    text(t("SPECIAL: {0}", cls.special.name), 158, 96, C.text);
+    text(t("ULTIMATE: {0}", cls.ult.name), 158, 104, C.text);
     if (own) text(S.lastClass === id ? "CHOSEN" : "[ENTER] CHOOSE", 230, 132, S.lastClass === id ? C.green : C.white, { align: "center" });
-    else text(`[ENTER] AWAKEN FOR ${cls.cost} EMBERS`, 230, 132, S.embers >= cls.cost ? C.ember : C.red, { align: "center" });
+    else text(t("[ENTER] AWAKEN FOR {0} EMBERS", cls.cost), 230, 132, S.embers >= cls.cost ? C.ember : C.red, { align: "center" });
     CLASS_ORDER.forEach((c, k) => painterFor(G.screen.hud).rect(200 + k * 10, 142, 6, 2, k === this.i ? C.white : S.unlocked[c] ? C.ember : C.dark));
   }
 }
@@ -258,7 +272,7 @@ export class Shrine {
     const S = G.save;
     panel(40, 10, 240, 160, { glow: C.ember });
     text("THE EMBER SHRINE", 160, 16, C.gold, { align: "center", font: "big" });
-    text(`EMBERS: ${S.embers}`, 160, 27, C.ember, { align: "center" });
+    text(t("EMBERS: {0}", S.embers), 160, 27, C.ember, { align: "center" });
     UPGRADES.forEach((u, k) => {
       const y = 38 + k * 11, lv = S.upgrades[u.id] ?? 0, sel = k === this.i, maxed = lv >= u.max, cost = u.cost(lv);
       if (sel) painterFor(G.screen.hud).rect(46, y - 2, 228, 9, hex("#2a2040") >>> 0);
@@ -335,7 +349,7 @@ export class Codex {
       text(seen ? effects[id].meta.name : "? ? ?", 8, 22 + k * 7.6, sel ? C.white : seen ? C.text : C.dark);
     });
     text("THE CODEX", 212, 6, C.gold, { align: "center", font: "big" });
-    text(`${seenCount()} OF ${EFFECT_IDS.length} WITNESSED`, 212, 16, C.ember, { align: "center" });
+    text(t("{0} OF {1} WITNESSED", seenCount(), EFFECT_IDS.length), 212, 16, C.ember, { align: "center" });
     if (this.id && isSeen(this.id)) para(effects[this.id].meta.desc, 112, 156, 204, C.dim, { lh: 6 });
     else text("NOT YET WITNESSED ON THE CLIMB", 212, 90, C.dark, { align: "center" });
     text("[LEFT/RIGHT] CATEGORY  [UP/DOWN] EFFECT  [ESC] BACK", 212, 26, C.dim, { align: "center" });
@@ -422,11 +436,11 @@ export class PartyMenu {
     const P = G.party, S = G.save;
     panel(4, 14, 312, 152, { glow: C.ember, a: 0.94 });
     text("THE PARTY", 160, 19, C.gold, { align: "center", font: "big" });
-    text(`1 TO 4 PLAYERS. EACH PICKS THEIR OWN VESSEL.  EMBERS ${S.embers}`, 160, 29, C.dim, { align: "center" });
+    text(t("1 TO 4 PLAYERS. EACH PICKS THEIR OWN VESSEL.  EMBERS {0}", S.embers), 160, 29, C.dim, { align: "center" });
     for (let i = 0; i < 4; i++) {
       const x = 8 + i * 77, s = P[i], col = hex(PLAYER_COLORS[i]) >>> 0;
       panel(x, 38, 73, 112, { edge: s ? col : C.edge, a: 0.9 });
-      text(`P${i + 1}${i === 0 ? " HOST" : ""}`, x + 36, 42, s ? col : C.dark, { align: "center" });
+      text(`P${i + 1}${i === 0 ? " " + t("HOST") : ""}`, x + 36, 42, s ? col : C.dark, { align: "center" });
       if (!s) {
         const blink = Math.floor(this.t * 2) & 1;
         text("PRESS ATTACK", x + 36, 80, blink ? C.text : C.dim, { align: "center" });
@@ -435,16 +449,16 @@ export class PartyMenu {
         continue;
       }
       const cls = CLASSES[s.cls], own = S.unlocked[s.cls];
-      text("< " + cls.name + " >", x + 36, 52, own ? C.white : C.dark, { align: "center" });
-      text(cls.title, x + 36, 59, C.dim, { align: "center" });
-      text(`HEARTS ${cls.hp / 2}  SPD ${cls.speed}`, x + 36, 68, C.blue, { align: "center" });
-      text(cls.special.name, x + 36, 76, C.text, { align: "center" });
-      text(cls.ult.name, x + 36, 83, C.ember, { align: "center" });
-      if (!own) text(`AWAKEN: ${cls.cost} EMBERS`, x + 36, 96, S.embers >= cls.cost ? C.gold : C.red, { align: "center" });
+      text("< " + L(cls.name) + " >", x + 36, 52, own ? C.white : C.dark, { align: "center", max: 70 });
+      text(cls.title, x + 36, 59, C.dim, { align: "center", max: 70 });
+      text(t("HEARTS {0}  SPD {1}", cls.hp / 2, cls.speed), x + 36, 68, C.blue, { align: "center", max: 70 });
+      text(cls.special.name, x + 36, 76, C.text, { align: "center", max: 70 });
+      text(cls.ult.name, x + 36, 83, C.ember, { align: "center", max: 70 });
+      if (!own) text(t("AWAKEN: {0} EMBERS", cls.cost), x + 36, 96, S.embers >= cls.cost ? C.gold : C.red, { align: "center", max: 70 });
       else if (i > 0) text(s.ready ? "READY" : "", x + 36, 96, C.green, { align: "center" });
-      text(DEVICE_LABEL[s.device] ?? "ANY DEVICE", x + 36, 132, C.dark, { align: "center" });
-      text(i === 0 ? "ATTACK: DONE" : "SPECIAL: LEAVE", x + 36, 140, C.dim, { align: "center" });
+      text(DEVICE_LABEL[s.device] ?? "ANY DEVICE", x + 36, 132, C.dark, { align: "center", max: 70 });
+      text(i === 0 ? "ATTACK: DONE" : "SPECIAL: LEAVE", x + 36, 140, C.dim, { align: "center", max: 70 });
     }
-    text("LEFT/RIGHT: CHANGE VESSEL   ATTACK ON A SLEEPING VESSEL: AWAKEN IT   ESC: DONE", 160, 156, C.dim, { align: "center" });
+    text("LEFT/RIGHT: CHANGE VESSEL   ATTACK ON A SLEEPING VESSEL: AWAKEN IT   ESC: DONE", 160, 156, C.dim, { align: "center", max: 312 });
   }
 }

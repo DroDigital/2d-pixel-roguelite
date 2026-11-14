@@ -9,12 +9,15 @@ import { G } from "./game/ctx.js";
 import { boot as bootScenes } from "./game/scenes.js";
 import { setupTouch } from "./game/touch.js";
 import { startPool, pools } from "./engine/workers.js";
+import { setLang, detectLang } from "./game/i18n.js";
 
 const canvas = document.getElementById("game");
 const params0 = new URLSearchParams(location.search);
 // every spare core runs effects; ?workers=0 turns the pool off
 if (params0.get("workers") !== "0") G.workers = pools.current = startPool();
 G.save = loadSave();
+// the language chosen in Options, or the system's (?lang=de overrides, for testing)
+setLang(params0.get("lang") ?? G.save.settings.lang ?? detectLang());
 G.screen = new Screen(canvas, { renderer: params0.get("renderer") ?? G.save.settings.renderer, glow: G.save.settings.glow ?? true, scanlines: G.save.settings.scanlines });
 G.input = new Input();
 window.desktop?.gpu().then((n) => (G.gpuName = n)).catch(() => {});

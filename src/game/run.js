@@ -7,6 +7,12 @@ import { G, sfx, rnd, rint, chance } from "./ctx.js";
 import { Pickup } from "./entity.js";
 import { BOONS } from "./boons.js";
 import { UPGRADES } from "./meta.js";
+import { t } from "./i18n.js";
+
+/** The share of coins and embers a solo second chance burns. */
+export const SECOND_CHANCE_COST = 0.3;
+/** In co-op, raising a teammate who bled out costs this share of the purse (at least RAISE_MIN coins). */
+export const RAISE_COST = 0.15, RAISE_MIN = 20;
 
 const HOOKS = ["onHit", "onKill", "onDash", "onDashEnd", "onHurt", "onRoomStart", "onRoomClear", "onAttack", "onSpecial", "onUlt", "onParry", "onBlock", "tick", "preHit", "onPickup"];
 
@@ -40,6 +46,7 @@ export class Run {
     this.stats_ = { parries: 0, rooms: 0, bosses: 0, crits: 0 };
     this.hits = 0;
     this.rerolls = up("reroll");
+    this.secondChance = true; // solo: once per realm, a lethal blow costs part of the haul instead of the climb
     this.over = false;
   }
   /** Make the party's vessels (once per climb; they walk from room to room). */
@@ -132,6 +139,7 @@ export class Run {
       G.hud?.toast("REKINDLED", "AN EMBER BURNS ON", PAL.fire);
       return;
     }
+    if (this.size === 1 && this.secondChance) return this.useSecondChance(p);
     if (this.size > 1) {
       p.hp = 0;
       p.goDown();
@@ -143,6 +151,37 @@ export class Run {
     }
     this.over = true;
     G.scene?.onPlayerDeath?.();
+  }
+  /** Solo, once per realm: rise from a lethal blow at half your hearts, paying with a share of the coins and embers. */
+  useSecondChance(p) {
+    this.secondChance = false;
+    const coins = Math.ceil(this.coins * SECOND_CHANCE_COST), embers = Math.ceil(this.embers * SECOND_CHANCE_COST);
+    this.coins -= coins;
+    this.embers -= embers;
+    p.hp = Math.ceil(p.maxHp / 2);
+    p.iframe = 2.5;
+    p.perf = null;
+    p.stun = 0;
+    const w = G.world;
+    // a burst of embers throws back everything close
+    for (const e of w.enemies()) {
+      const dx = e.x - p.x, d = Math.hypot(dx, (e.y - p.y) * 1.6);
+      if (d > 70 || e.heavy) continue;
+      e.kbx = Math.sign(dx || 1) * (260 - d * 2);
+      e.stun = Math.max(e.stun ?? 0, 0.8);
+    }
+    w.spawnFx("holy/resurrection", p.x, p.y, { actor: p.snapshot(), palette: PAL.fire }, { follow: p, prio: 2 });
+    w.spawnFx("impacts/ground-slam", p.x, p.y, { palette: PAL.fire }, { prio: 2 });
+    w.slowmo(0.25, 1.2);
+    w.shake?.(4, 0.4);
+    sfx("holy", 1.2, 0.7);
+    G.hud?.title(t("SECOND CHANCE"), coins || embers ? t("THE FLAME TAKES {0}G AND {1} EMBERS", coins, embers) : t("ONCE PER REALM"), 3);
+    G.hud?.bump("coins");
+    G.hud?.bump("embers");
+  }
+  /** A new realm: the solo second chance comes back. */
+  newRealm() {
+    this.secondChance = true;
   }
   /** What a fallen enemy leaves behind. */
   dropLoot(e) {

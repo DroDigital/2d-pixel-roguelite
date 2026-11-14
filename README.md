@@ -27,6 +27,12 @@ No build step is needed to play locally: `index.html` loads the ES modules direc
 
 Touch screens get a thumbstick and buttons.
 
+### Second chance (solo)
+
+Once per realm, a blow that would end a solo climb doesn't. You rise with half your hearts and a moment of
+invulnerability, and a burst of embers throws back everything close. The flame takes 30% of the coins and embers
+you're carrying, and a banner says how much. Spare lives from the Phoenix upgrade and boon are used first.
+
 ### Local co-op (1-4 players)
 
 Everyone plays on one screen, each on their own device and with their own vessel.
@@ -38,9 +44,12 @@ Everyone plays on one screen, each on their own device and with their own vessel
   `'`/Num4 ultimate, `;`/Num0 use. The first player keeps WASD + J K L I.
 - **Shared and personal**: coins, embers, boons and the run's lives are shared by the party. Hearts, shields,
   ultimate charge and special cooldowns belong to each player. Heals and on-hit boons go to whoever earned them.
-- **Downed, not dead**: once the party is out of lives, a player at zero hearts goes down. A teammate who stands
-  over them for ~2 seconds rekindles them with a third of their hearts. Clearing a room revives everyone. The
-  climb ends only when the whole party is down.
+- **Downed, not dead**: once the party is out of lives, a player at zero hearts goes down. A teammate who holds
+  **use** beside them for 1.3 s revives them with a third of their hearts. A bar over the downed player shows the
+  revive filling and, under it, the 25 s before they bleed out.
+- **Fallen**: a player who bleeds out has fallen. Raising them takes 2.6 s of holding use and costs the party 15%
+  of its coins (at least 20). They come back with 30% of their hearts. Clearing a room revives the downed but not
+  the fallen. The climb ends only when nobody is left standing.
 - **Scaling** for a party of *n*:
   - Foes get ×(1 + 0.6(n−1)) life and bosses ×(1 + 0.7(n−1)), so four players face 2.8× and 3.1×.
   - Waves are ×(1 + 0.45(n−1)) larger, and elites are 3% more likely per extra player.
@@ -106,6 +115,29 @@ about 100 ms before these changes to about 15 ms (from about 10 fps to about 55 
 - **Meta-progression**: embers carried home buy permanent upgrades at the camp's shrine and awaken new vessels.
 - **The Codex**: every effect you witness on the climb is recorded and can be replayed, acted out, at the camp.
 
+## Languages
+
+English, German, Spanish, French, Simplified Chinese and Japanese. The game follows the system language and can
+be switched in **Options → Language**; `?lang=de` in the URL forces one.
+
+- `src/game/i18n.js` holds `t(key, ...args)`. The English text is the key, and `{0}`, `{1}` are filled from the
+  arguments. Text drawn through the UI helpers is looked up automatically, so only text built from pieces needs
+  `t()`.
+- `src/game/lang/<id>.js` is one dictionary per language. Missing keys fall back to English.
+- `node tools/i18n-check.mjs` lists every on-screen string and reports what each language is missing, unused
+  entries, broken placeholders and characters the fonts can't draw. `--strict` makes it fail CI.
+- Accented capitals are built onto the pixel fonts in `src/game/lang/latin.js`. Chinese and Japanese glyphs are cut
+  from [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) for exactly the characters the
+  translations use: run `python3 tools/cjk-glyphs.py` after adding new ones.
+- `node tools/screens.mjs <dir>` screenshots the main screens in every language, to check that text fits.
+
+## Music and fonts
+
+- [docs/MUSIC_PROMPTS.md](docs/MUSIC_PROMPTS.md) has a Suno prompt, an exclude list and a structure for each of
+  the twelve music cues, matched to the tempo, key and mode of the synth loops in `src/engine/audio.js`.
+- [docs/font-candidates.png](docs/font-candidates.png) compares five free pixel fonts with the current one, as they
+  would look in the game.
+
 ## How it's built
 
 - `vendor/pixelfx/` is an unmodified copy of pixelfx's `src/core` and `src/fx` (MIT, see its LICENSE and NOTICE).
@@ -124,4 +156,6 @@ about 100 ms before these changes to about 15 ms (from about 10 fps to about 55 
 - Effects: [pixelfx](https://github.com/patch-gg/pixelfx), MIT License, Copyright (c) 2026 Patch and Hugo Duprez,
   including code adapted from [Sprite Fusion's pixel art VFX](https://www.spritefusion.com/pixel-art-vfx) by Hugo
   Duprez and acting adapted from [Hollow Crown](https://github.com/rehan-remade/hollow-crown) by rehan-remade (MIT).
+- Chinese and Japanese glyphs: derived from [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) by
+  TakWolf, SIL Open Font License 1.1 ([licenses/OFL-fusion-pixel-font.txt](licenses/OFL-fusion-pixel-font.txt)).
 - Everything else in this repository: game code, art, sound and music are generated in code.

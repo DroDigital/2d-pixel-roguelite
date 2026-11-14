@@ -3,6 +3,7 @@
 
 import { PAL } from "../engine/pfx.js";
 import { G, sfx, rnd, rint, pick, chance, shuffle, weighted, FLOOR_TOP, FLOOR_BOT } from "./ctx.js";
+import { t } from "./i18n.js";
 import { World } from "./world.js";
 import { PAINTERS } from "./art.js";
 import { makeEnemy, summon, ENEMIES } from "./enemies.js";
@@ -112,7 +113,7 @@ const ROOM_ICON = {
   boss: { fx: "critters/flying-skull", opts: { hover: 0 }, yoff: 30 },
 };
 const LABEL = { shop: "MERCHANT", rest: "REST", shrine: "SHRINE", treasure: "TREASURE", mystery: "???", elite: "CHAMPION", boss: "THE WARDEN" };
-const REWARD_LABEL = { boon: (e) => ELEM_NAME[e] + " BOON", coins: () => "GOLD", heart: () => "HEART", embers: () => "EMBERS", ult: () => "FOCUS" };
+const REWARD_LABEL = { boon: (e) => t("{0} BOON", ELEM_NAME[e]), coins: () => "GOLD", heart: () => "HEART", embers: () => "EMBERS", ult: () => "FOCUS" };
 
 function rewardRoll(run) {
   const r = weighted([{ k: "boon", w: 5 }, { k: "coins", w: 2.2 }, { k: "heart", w: 1.1 }, { k: "embers", w: 1.6 }, { k: "ult", w: 0.6 }]).k;
@@ -256,7 +257,10 @@ export class Room {
         if (d < bd) (bd = d), (best = it);
       }
       q.interactable = best;
-      if (best && !prompt) prompt = (w.players.length > 1 ? `P${q.slot + 1} ` : "") + `[USE] ${best.prompt}`;
+      if (best && !prompt) prompt = (w.players.length > 1 ? `P${q.slot + 1} ` : "") + t("[USE] {0}", best.prompt);
+      // a downed teammate close by
+      const mate = !best && w.players.find((o) => o !== q && o.down && Math.hypot(o.x - q.x, (o.y - q.y) * 1.6) < 30);
+      if (mate && !prompt) prompt = mate.fallen ? t("P{0} [HOLD USE] RAISE P{1} - {2}G", q.slot + 1, mate.slot + 1, mate.raiseCost()) : t("P{0} [HOLD USE] REVIVE P{1}", q.slot + 1, mate.slot + 1);
     }
     G.hud.prompt = prompt;
     this.boss?.updateRoom?.(dt);
@@ -269,7 +273,8 @@ export class Room {
     const w = G.world, run = this.run, p = w.player;
     run.stat("rooms");
     // the fallen get back up when the room falls quiet
-    for (const q of run.players) if (q.down) q.revive(Math.ceil(q.maxHp / 3));
+    // (the fallen, who bled out, stay down until someone pays to raise them)
+    for (const q of run.players) if (q.down && !q.fallen) q.revive(Math.ceil(q.maxHp / 3));
     for (const f of run.hooks.onRoomClear) f(run, p);
     w.slowmo(0.35, 0.5);
     sfx("clear");
@@ -398,7 +403,7 @@ export class Room {
       ];
       shuffle(items).slice(0, 4).forEach((it, i) => {
         const x = 70 + i * 60, price = Math.round(it.price * (1 + run.biome * 0.15));
-        const o = new Interactable(x, 158, { fx: it.fx, opts: it.opts, prompt: `BUY ${it.name} - ${price}G`, price, yoff: -8 });
+        const o = new Interactable(x, 158, { fx: it.fx, opts: it.opts, prompt: t("BUY {0} - {1}G", it.name, price), price, yoff: -8 });
         o.interact = (buyer = p) => {
           if (run.coins < price) {
             sfx("nope");

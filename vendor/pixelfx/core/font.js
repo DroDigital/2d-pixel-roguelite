@@ -82,7 +82,9 @@ export function rasterText(str, font, plot) {
       x += F.space + F.gap;
       continue;
     }
-    for (let r = 0; r < F.h; r++) for (let c = 0; c < g.w; c++) if (g.rows[r][c]) plot(x + c, r);
+    // a glyph may reach above or below the line (accents, cedillas, CJK): oy is its first row
+    const oy = g.oy ?? 0;
+    for (let r = 0; r < g.rows.length; r++) for (let c = 0; c < g.w; c++) if (g.rows[r][c]) plot(x + c, r + oy);
     x += g.w + F.gap;
   }
 }
