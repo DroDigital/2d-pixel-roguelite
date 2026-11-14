@@ -1,4 +1,4 @@
-# Emberspire
+# Emberlite
 
 A 2.5D pixel art roguelite brawler that runs in the browser. You are a hollow vessel with an ember for a heart,
 climbing five realms of a burning spire. Every spark, slash, explosion, spell, critter, status, pickup, weather system
@@ -10,7 +10,7 @@ all **244** of them are used somewhere in play.
 ```bash
 npm install        # only esbuild, for the bundle
 npm run dev        # http://localhost:8080
-npm run build      # dist/index.html + dist/game.js, and a single-file dist/emberspire.html
+npm run build      # dist/index.html + dist/game.js, and a single-file dist/emberlite.html
 ```
 
 No build step is needed to play locally: `index.html` loads the ES modules directly.

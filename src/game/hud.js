@@ -106,6 +106,23 @@ export class Hud {
       p.px(x + 1, y, c); p.px(x, y + 1, c); p.px(x + 1, y + 1, hex(pal[pal.length - 1]) >>> 0); p.px(x + 2, y + 1, c); p.px(x + 1, y + 2, c);
     });
   }
+  /** At the camp nothing threatens you: just who's climbing, top left, and the embers you have to spend, top right. */
+  camp(p, party) {
+    if (party.length > 1) {
+      let x = 6;
+      for (const pl of party) {
+        const s = `P${pl.slot + 1} ${L(pl.cls.name)}`;
+        text(s, x, 5, pl.color);
+        x += width(s) + 9;
+      }
+    } else if (party[0]) {
+      text(party[0].cls.name, 6, 5, C.gold);
+      text(party[0].cls.title, 6, 12, C.dim);
+    }
+    p.sprite(GEM, GEM_PAL, 308, 4);
+    p.light(310, 7, hex("#ff8a2a"), 0.3);
+    text(G.save.embers, 305, 5, C.ember, { align: "right" });
+  }
   /** A co-op player's panel across the top: their tag and class, hearts, shields, ultimate and special. */
   panel(p, run, pl) {
     const x0 = 2 + pl.slot * 80, col = pl.color;
@@ -129,7 +146,8 @@ export class Hud {
     if (!this.hidden && run) {
       const party = run.players?.length ? run.players : G.world?.player ? [G.world.player] : [];
       this.coop = party.length > 1;
-      if (this.coop) party.forEach((pl) => this.panel(p, run, pl));
+      if (this.hub) this.camp(p, party);
+      else if (this.coop) party.forEach((pl) => this.panel(p, run, pl));
       else if (party[0]) this.solo(p, run, party[0]);
       // coins and embers (bottom right in co-op, where the panels aren't)
       if (!run.godMode) {

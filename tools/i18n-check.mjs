@@ -14,7 +14,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = [path.join(root, "src/game"), path.join(root, "src/engine/input.js")];
 // debug and benchmark readouts stay in English
 const SKIP = new Set(["bench.js", "i18n.js"]);
-const IGNORE = new Set(["EMBERSPIRE", "GPU", "FPS", "BENCH", "AVG CPU MS", "WORKERS", "P1", "P2", "P3", "P4", "OK"]);
+const IGNORE = new Set(["EMBERLITE", "GPU", "FPS", "BENCH", "AVG CPU MS", "WORKERS", "P1", "P2", "P3", "P4", "OK"]);
 
 export function collect() {
   const files = [];

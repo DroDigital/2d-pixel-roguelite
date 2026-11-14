@@ -1,6 +1,6 @@
-# Suno prompts for Emberspire's music
+# Suno prompts for Emberlite's music
 
-Emberspire plays twelve pieces of music. Today each is a small synth loop generated in `src/engine/audio.js`. The
+Emberlite plays twelve pieces of music. Today each is a small synth loop generated in `src/engine/audio.js`. The
 prompts below describe the same pieces as full tracks for [Suno](https://suno.com), so they can replace the synth
 loops. Each one keeps the loop's tempo, key and mode, so it fits the same scene.
 
@@ -19,7 +19,7 @@ Some words recur because they shape the result: "pixel", "chiptune-inspired", "l
 
 ---
 
-## 1. Title: "Emberspire" (title screen)
+## 1. Title: "Emberlite" (title screen)
 
 72 BPM · D Dorian · about 2:30 · loop of 16 bars (≈ 53 s)
 Mood: a lone ember under a night sky; awe and quiet resolve before the climb.

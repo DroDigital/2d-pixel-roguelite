@@ -1,5 +1,5 @@
 {
-  "name": "emberspire",
+  "name": "emberlite",
   "version": "1.1.0",
   "private": true,
   "description": "A 2.5D pixel art roguelite brawler built on the pixelfx effects library.",
@@ -24,9 +24,9 @@
   "homepage": "https://github.com/DroDigital/2d-pixel-roguelite",
   "main": "desktop/main.cjs",
   "build": {
-    "appId": "com.drodigital.emberspire",
-    "productName": "Emberspire",
-    "copyright": "Emberspire. Effects: pixelfx (MIT) by Patch and Hugo Duprez.",
+    "appId": "com.drodigital.emberlite",
+    "productName": "Emberlite",
+    "copyright": "Emberlite. Effects: pixelfx (MIT) by Patch and Hugo Duprez.",
     "directories": {
       "output": "release",
       "buildResources": "desktop/icons"
@@ -63,7 +63,7 @@
       "hardenedRuntime": false
     },
     "dmg": {
-      "title": "Emberspire"
+      "title": "Emberlite"
     },
     "win": {
       "target": [
@@ -92,7 +92,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Emberspire"
+      "shortcutName": "Emberlite"
     },
     "portable": {
       "artifactName": "${productName}-${version}-win-portable.${ext}"

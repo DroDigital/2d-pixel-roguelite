@@ -16,4 +16,4 @@ createServer(async (req, res) => {
     res.writeHead(404);
     res.end("not found");
   }
-}).listen(port, () => console.log(`emberspire at http://localhost:${port}`));
+}).listen(port, () => console.log(`emberlite at http://localhost:${port}`));
