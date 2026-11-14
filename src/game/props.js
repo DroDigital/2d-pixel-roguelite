@@ -31,8 +31,7 @@ export class Barrel extends Ent {
       w.shake(5, 0.4);
       w.hitstop(0.06);
       aoe({ team: "player", x, y }, x, y, 44, 30, { elem: "fire", kb: 260, kz: 160, status: ["burn", 3], fromPlayer: true });
-      const p = w.player;
-      if (p && Math.hypot(p.x - x, (p.y - y) * 2) < 44) damage(p, 2, { src: this, elem: "fire" });
+      for (const p of w.livePlayers()) if (Math.hypot(p.x - x, (p.y - y) * 2) < 44) damage(p, 2, { src: this, elem: "fire" });
     });
   }
 }
@@ -52,7 +51,7 @@ export class Hazard extends Ent {
   update(dt) {
     this.age += dt;
     if (this.follow) {
-      const p = G.world.player;
+      const p = G.world.nearestPlayer(this.x, this.y);
       if (p) {
         this.x += Math.sign(p.x - this.x) * Math.min(Math.abs(p.x - this.x), this.follow * dt);
         this.y += Math.sign(p.y - this.y) * Math.min(Math.abs(p.y - this.y), this.follow * 0.6 * dt);
@@ -62,7 +61,7 @@ export class Hazard extends Ent {
     if (this.age < (this.delay ?? 0) + (this.warm ?? 0.3)) return;
     if (this.age > (this.life ?? Infinity) || this.inst?.dead) return (this.gone = true);
     if (this.active && !this.active(this.age)) return;
-    const victims = [G.world.player, ...(this.hurtsEnemies ? G.world.enemies() : [])].filter(Boolean);
+    const victims = [...G.world.livePlayers(), ...(this.hurtsEnemies ? G.world.enemies() : [])];
     for (const e of victims) {
       if (e.dead) continue;
       const dx = (e.x - this.x) / (this.r + e.r * 0.5), dy = (e.y - this.y) / (this.r * 0.4 + 3);
@@ -112,8 +111,8 @@ export class Door extends Ent {
   update(dt) {
     this.age += dt;
     this.open = Math.min(1, this.open + dt * 1.5);
-    const p = G.world.player;
-    if (this.open >= 1 && p && !p.dead && Math.abs(p.x - this.x) < 12 && Math.abs(p.y - this.y) < 8 && !G.room.leaving) G.room.leave(this.spec, this);
+    // any member of the party stepping in takes everyone through
+    if (this.open >= 1 && !G.room.leaving && G.world.livePlayers().some((p) => Math.abs(p.x - this.x) < 12 && Math.abs(p.y - this.y) < 8)) G.room.leave(this.spec, this);
   }
   draw(frame) {
     blit(frame, this.portal, this.x, this.y, this.age, { alpha: this.open, light: this.open });

@@ -2,18 +2,32 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
   pages: write
   id-token: write
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages: ${{ steps.pages.outputs.enabled }}
     steps:
+      # deploying needs Pages switched on (Settings > Pages > Source: GitHub Actions); until then, build only
+      - id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/pages" > /dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not enabled for this repository, so the site is built but not deployed. Enable it in Settings > Pages with Source: GitHub Actions."
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -25,6 +39,7 @@ jobs:
           path: dist
   deploy:
     needs: build
+    if: needs.build.outputs.pages == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

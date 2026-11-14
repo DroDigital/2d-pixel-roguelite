@@ -28,6 +28,23 @@ export class World {
     this.player = null;
     this.paused = false;
   }
+  /** Every player in the room (the host first). */
+  get players() {
+    return this.party ?? (this.player ? [this.player] : []);
+  }
+  /** Players who can be hit: not down, not dead, not leaving. */
+  livePlayers() {
+    return this.players.filter((p) => !p.down && !p.dead && !p.hidden);
+  }
+  /** The living player nearest to (x, y), or null. */
+  nearestPlayer(x, y) {
+    let best = null, bd = Infinity;
+    for (const p of this.livePlayers()) {
+      const d = Math.hypot(p.x - x, (p.y - y) * 1.6);
+      if (d < bd) (bd = d), (best = p);
+    }
+    return best;
+  }
   add(e) {
     e.world = this;
     this.ents.push(e);
@@ -128,7 +145,7 @@ export class World {
   }
   /** Bodies on the floor push gently apart so crowds don't stack into one pixel. */
   separate() {
-    const L = this.ents.filter((e) => e.solid && !e.dead);
+    const L = this.ents.filter((e) => e.solid && !e.dead && !e.down); // the downed lie still and can be stood over
     for (let i = 0; i < L.length; i++)
       for (let j = i + 1; j < L.length; j++) {
         const a = L[i], b = L[j], dx = b.x - a.x, dy = (b.y - a.y) * 1.8, r = (a.r + b.r) * 0.8, d = Math.hypot(dx, dy);

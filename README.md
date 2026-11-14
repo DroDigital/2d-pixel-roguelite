@@ -27,6 +27,28 @@ No build step is needed to play locally: `index.html` loads the ES modules direc
 
 Touch screens get a thumbstick and buttons.
 
+### Local co-op (1-4 players)
+
+Everyone plays on one screen, each on their own device and with their own vessel.
+
+- **Joining**: at the camp, a second player presses attack on an unused gamepad (A / Start) or on the second
+  keyboard half (`.` / Numpad 1). The party altar opens and the new player picks a vessel. Anyone can change
+  vessel there later; the host leaves the altar to set off.
+- **Second keyboard player**: arrows to move, `.`/Num1 attack, `/`/Num2 special, Right Shift/Num3 dash,
+  `'`/Num4 ultimate, `;`/Num0 use. The first player keeps WASD + J K L I.
+- **Shared and personal**: coins, embers, boons and the run's lives are shared by the party. Hearts, shields,
+  ultimate charge and special cooldowns belong to each player. Heals and on-hit boons go to whoever earned them.
+- **Downed, not dead**: once the party is out of lives, a player at zero hearts goes down. A teammate who stands
+  over them for ~2 seconds rekindles them with a third of their hearts. Clearing a room revives everyone. The
+  climb ends only when the whole party is down.
+- **Scaling** for a party of *n*:
+  - Foes get ×(1 + 0.6(n−1)) life and bosses ×(1 + 0.7(n−1)), so four players face 2.8× and 3.1×.
+  - Waves are ×(1 + 0.45(n−1)) larger, and elites are 3% more likely per extra player.
+  - Foes may attack together in larger numbers, each picking its own target, so the party is spread across the room.
+  - Bosses act up to 24% faster and aim their patterns at different players.
+  - Coins drop ×(1 + 0.35(n−1)), since the party shares one purse.
+- `?coop=2` (up to 4) in the URL starts with a test party already joined.
+
 ## Desktop (macOS, Windows, Linux)
 
 The desktop app is an Electron shell around the same game, with the GPU and every CPU core put to work:

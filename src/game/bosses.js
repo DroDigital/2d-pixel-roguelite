@@ -11,12 +11,17 @@ import { makeEnemy, summon, VP, geyserAt } from "./enemies.js";
 import { Hazard } from "./props.js";
 import { Pickup } from "./entity.js";
 import { ember, coin } from "./run.js";
+import { partySize, partyHp } from "./ctx.js";
 
 const ev = (t, fn) => ({ t, fn });
 const ENEMY = { team: "enemy" };
 const blast = (x, y, r, dmg, o = {}) => aoe(ENEMY, x, y, r, dmg, { team: "enemy", ...o });
 const tele = (x, y, r, dur, then, c) => G.world.telegraph(x, y, r, dur, then, c);
-const P = () => G.world.player;
+// the player a pattern is aimed at: the boss picks one per pattern, so a party shares the pressure
+const P = () => {
+  const w = G.world, f = w.focus;
+  return f && !f.down && !f.dead ? f : w.livePlayers()[0] ?? w.player;
+};
 const fx = (id, x, y, opts = {}, s = {}) => G.world.spawnFx(id, x, y, opts, { prio: 2, ...s });
 
 // moves bosses borrow (dmg in half hearts)
@@ -411,9 +416,12 @@ const BOSSES = {
   },
 };
 
+const melee = (pt) => !!pt.range;
+
 class Boss extends Vessel {
   constructor(id, def, x, y, run) {
-    const hp = def.hp * (1 + (G.save?.stats.wins ?? 0) * 0.15);
+    // tougher for every ascension, and for every extra player in the party
+    const hp = def.hp * (1 + (G.save?.stats.wins ?? 0) * 0.15) * partyHp(3.1);
     super({ team: "enemy", x, y, facing: -1, pal: vesselPal(def.pal), base: def.guard, hp, maxhp: hp, r: 9, h: 40, depthR: 7, kind: id });
     this.def = def;
     this.boss = true;
@@ -492,7 +500,7 @@ class Boss extends Vessel {
     }
     this.busy -= dt * (this.enraged ? 1.25 : 1);
     const p = P();
-    if (!p || p.dead) return;
+    if (!p || p.dead || p.down) return;
     if (this.busy > 0) {
       if (this.casting <= 0) {
         // drift to a fighting distance
@@ -522,9 +530,12 @@ class Boss extends Vessel {
     if (first) pickd = first;
     const [k, pt] = pickd;
     this.last = k;
+    const live = G.world.livePlayers();
+    G.world.focus = melee(pt) ? G.world.nearestPlayer(this.x, this.y) : live[Math.floor(Math.random() * live.length)];
     if (pt.once) this.used.add(k);
     this.facing = Math.sign(p.x - this.x) || this.facing;
-    this.busy = (pt.run(this) ?? 1.5) + rnd(0.3, 0.9) / (this.enraged ? 1.6 : 1);
+    // bigger parties face shorter pauses between patterns
+    this.busy = ((pt.run(this) ?? 1.5) + rnd(0.3, 0.9) / (this.enraged ? 1.6 : 1)) * (1 - 0.08 * (partySize() - 1));
   }
   onDeath() {
     const w = G.world, run = G.run;

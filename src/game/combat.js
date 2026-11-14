@@ -3,6 +3,7 @@
 
 import { PAL, fxMod, createFx, actorAlphaOf } from "../engine/pfx.js";
 import { G, sfx, rnd, chance, clampX, clampY } from "./ctx.js";
+import { who } from "./run.js";
 
 export const ELEM = {
   phys: { pal: null, sfx: "hit" },
@@ -146,7 +147,7 @@ export function damage(t, amt, info = {}) {
   let dmg = amt, crit = !!info.crit;
   if (fromPlayer && run && !info.dot) {
     dmg *= run.stats.dmg;
-    if (!info.noCrit && !crit && chance(run.stats.crit)) crit = true;
+    if (!info.noCrit && !crit && chance(run.stats.crit + (who(info)?.cls?.crit ?? 0))) crit = true;
     if (crit) dmg *= run.stats.critMul;
     for (const f of run.hooks.preHit) dmg = f(t, dmg, info) ?? dmg;
   }

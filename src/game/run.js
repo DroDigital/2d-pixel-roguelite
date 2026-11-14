@@ -11,21 +11,22 @@ import { UPGRADES } from "./meta.js";
 const HOOKS = ["onHit", "onKill", "onDash", "onDashEnd", "onHurt", "onRoomStart", "onRoomClear", "onAttack", "onSpecial", "onUlt", "onParry", "onBlock", "tick", "preHit", "onPickup"];
 
 export class Run {
-  constructor(clsId) {
+  /** party: a class id (one player) or [{ cls, device }] for local co-op, host first. */
+  constructor(party) {
     const S = G.save, up = (k) => S.upgrades[k] ?? 0;
-    this.clsId = clsId;
-    this.cls = CLASSES[clsId];
+    this.partySpec = typeof party === "string" ? [{ cls: party, device: null }] : party;
+    this.size = this.partySpec.length;
+    this.clsId = this.partySpec[0].cls;
+    this.cls = CLASSES[this.clsId];
+    this.up = up;
     this.stats = {
-      dmg: 1 + up("might") * 0.06, crit: 0.05 + (this.cls.crit ?? 0) + up("precision") * 0.03, critMul: 2, speed: 1, atkSpeed: 1, cdr: 1, dashCd: 1, dashLen: 1,
-      kb: 1, magnet: 1 + up("magnet") * 0.25, dmgTaken: 1, ultGain: (this.cls.ultGain ?? 1) * (1 + up("focus") * 0.15), coinMul: 1 + up("greed") * 0.15, luck: up("luck"),
+      dmg: 1 + up("might") * 0.06, crit: 0.05 + up("precision") * 0.03, critMul: 2, speed: 1, atkSpeed: 1, cdr: 1, dashCd: 1, dashLen: 1,
+      kb: 1, magnet: 1 + up("magnet") * 0.25, dmgTaken: 1, ultGain: 1 + up("focus") * 0.15, coinMul: (1 + up("greed") * 0.15) * (1 + 0.35 * (this.size - 1)), luck: up("luck"),
     };
-    this.maxHp = this.cls.hp + up("vitality") * 2;
-    this.hp = this.maxHp;
+    this.players = [];
     this.lives = up("phoenix");
     this.coins = 20 * up("purse");
     this.embers = 0;
-    this.ult = up("focus") ? 25 : 0;
-    this.shield = 0;
     this.boons = [];
     this.hooks = Object.fromEntries(HOOKS.map((h) => [h, []]));
     this.biome = 0;
@@ -41,6 +42,24 @@ export class Run {
     this.rerolls = up("reroll");
     this.over = false;
   }
+  /** Make the party's vessels (once per climb; they walk from room to room). */
+  makePlayers(Player) {
+    this.players = this.partySpec.map((s, i) => {
+      const p = new Player(CLASSES[s.cls], 40, 150 + i * 6, i, this.size > 1 ? s.device : null);
+      p.maxHp = p.hp = CLASSES[s.cls].hp + this.up("vitality") * 2;
+      p.ult = this.up("focus") ? 25 : 0;
+      return p;
+    });
+    return this.players;
+  }
+  /** The party members still standing. */
+  alive() {
+    return this.players.filter((p) => !p.down && !p.dead);
+  }
+  /** Something for every living player (hearts, focus, shields). */
+  each(fn) {
+    for (const p of this.alive()) fn(p);
+  }
   stat(k) {
     this.stats_[k] = (this.stats_[k] ?? 0) + 1;
   }
@@ -53,7 +72,7 @@ export class Run {
   addBoon(b) {
     this.boons.push(b);
     b.apply?.(this);
-    if (G.world?.player) b.room?.(this, G.world.player);
+    for (const p of this.alive()) b.room?.(this, p);
   }
   /** Boons on offer: not owned, weighted by rarity, the luckier the rarer. */
   offer(n = 3, minRarity = 0) {
@@ -76,7 +95,8 @@ export class Run {
   }
   onPlayerHit(t, dmg, info) {
     if (info.dot) return;
-    this.ult = Math.min(100, this.ult + Math.min(6, dmg * 0.22) * this.stats.ultGain);
+    const p = who(info);
+    if (p) p.ult = Math.min(100, p.ult + Math.min(6, dmg * 0.22) * this.stats.ultGain * (p.cls.ultGain ?? 1));
     this.hits++;
     if (info.crit) this.stat("crits");
     this.combo++;
@@ -89,19 +109,22 @@ export class Run {
     if (e.isProp) return;
     this.kills++;
     G.save.stats.kills++;
-    this.ult = Math.min(100, this.ult + 4 * this.stats.ultGain * (this.clsId === "reaper" ? 2 : 1));
+    const p = who(info);
+    if (p) p.ult = Math.min(100, p.ult + 4 * this.stats.ultGain * (p.cls.ultGain ?? 1) * (p.cls.id === "reaper" ? 2 : 1));
     if (!G.save.bestiary.includes(e.kind)) G.save.bestiary.push(e.kind);
     for (const f of this.hooks.onKill) f(e, info, this);
   }
-  heartLost(n) {
-    G.hud?.heartLost(this.hp, n);
+  heartLost(p, n) {
+    G.hud?.heartLost(p, n);
   }
-  /** Out of hearts: a spare life brings you back, otherwise the run ends. */
-  playerDown() {
-    const p = G.world.player;
+  /**
+   * Out of hearts: a spare life (shared by the party) brings you back. Alone, the run ends; in co-op you go down and
+   * a friend can rekindle you, and the run ends only when nobody is left standing.
+   */
+  playerDown(p) {
     if (this.lives > 0) {
       this.lives--;
-      this.hp = Math.ceil(this.maxHp / 2);
+      p.hp = Math.ceil(p.maxHp / 2);
       p.iframe = 3;
       G.world.spawnFx(this.lives % 2 ? "spawn/respawn-beam" : "holy/resurrection", p.x, p.y, { actor: p.snapshot() }, { follow: p, prio: 2 });
       G.world.slowmo(0.3, 1);
@@ -109,8 +132,15 @@ export class Run {
       G.hud?.toast("REKINDLED", "AN EMBER BURNS ON", PAL.fire);
       return;
     }
-    p.dead = true;
-    p.perf = null;
+    if (this.size > 1) {
+      p.hp = 0;
+      p.goDown();
+      if (this.alive().length) return;
+    }
+    for (const q of this.players) {
+      q.dead = true;
+      q.perf = null;
+    }
     this.over = true;
     G.scene?.onPlayerDeath?.();
   }
@@ -121,7 +151,7 @@ export class Run {
     const toss = (o) => w.add(new Pickup({ x: e.x, y: e.y, z: Math.max(4, e.z), vx: rnd(-60, 60), vy: rnd(-25, 25), vz: rnd(80, 140), ...o }));
     for (let i = 0; i < coins; i++) toss(coin());
     if (chance(0.5)) toss(xpOrb());
-    if (chance(0.035 + this.stats.luck * 0.01) && this.hp < this.maxHp) toss(heart());
+    if (chance((0.035 + this.stats.luck * 0.01) * (1 + 0.3 * (this.size - 1))) && this.players.some((p) => p.hp < p.maxHp)) toss(heart());
     if (d.elite || e.isElite) {
       w.spawnFx("spawn/coin-drop", e.x, e.y, { coins: 8 }, { prio: 1 });
       for (let i = 0; i < 2 + rint(0, 2); i++) toss(ember());
@@ -133,11 +163,11 @@ export function coin(v = 1) {
   return { fxId: "pickups/coin-spin", lightK: 0.6, yoff: 6, onTake: () => { G.run.coins += v; sfx("coin", 0.7); G.hud?.bump("coins"); for (const f of G.run.hooks.onPickup) f("coin"); } };
 }
 export function xpOrb() {
-  return { fxId: "pickups/xp-orb", lightK: 0.8, yoff: 6, magnet: 70, onTake: () => { const r = G.run; r.ult = Math.min(100, r.ult + 3 * r.stats.ultGain); sfx("gem", 0.4, 1.5); } };
+  return { fxId: "pickups/xp-orb", lightK: 0.8, yoff: 6, magnet: 70, onTake: (p) => { p.ult = Math.min(100, p.ult + 3 * G.run.stats.ultGain); sfx("gem", 0.4, 1.5); } };
 }
 export function heart() {
   return {
-    fxId: "pickups/heart-pickup", yoff: 6, magnet: 30, delay: 0.8, canTake: () => G.run.hp < G.run.maxHp,
+    fxId: "pickups/heart-pickup", yoff: 6, magnet: 30, delay: 0.8, canTake: (p) => p.hp < p.maxHp,
     onTake: (p) => { p.heal(2 + (G.run.has("bloom") ? 1 : 0)); G.world.spawnFx("pickups/collect-burst", p.x, p.y - 20, { palette: PAL.blood }, { prio: 1 }); },
   };
 }
@@ -146,4 +176,12 @@ export function ember(n = 1) {
     fxId: "pickups/gem-spin", fxOpts: { palette: PAL.fire }, yoff: 6, magnet: 60,
     onTake: (p) => { G.run.embers += n; sfx("gem", 0.8); G.world.spawnFx("pickups/collect-burst", p.x, p.y - 20, { palette: PAL.fire }, { prio: 1 }); G.hud?.bump("embers"); },
   };
+}
+
+/** The player behind a hit (directly, or through a projectile they fired); the host if it can't tell. */
+export function who(info = {}) {
+  const s = info.src;
+  if (s?.isPlayer) return s;
+  if (s?.owner?.isPlayer) return s.owner;
+  return G.run?.players?.[0] ?? G.world?.player ?? null;
 }
