@@ -49,7 +49,8 @@ const director = {
   },
   draw() {
     this.cur?.draw();
-    this.fx.drawLayer(G.screen.hud, "hud");
+    // transitions go over everything, words included
+    this.fx.drawLayer(G.screen.top, "hud");
   },
   /** Cover the screen with a transition, swap at its darkest, uncover. */
   go(fn, id) {
@@ -136,7 +137,7 @@ class TitleScene {
     this.w.draw(G.screen.frame);
     const k = Math.min(1, this.t / 1.5), p = painterFor(G.screen.hud);
     const grad = (gx, gy) => hex(["#fff4c0", "#ffd84a", "#ff9a3c", "#e0501c", "#a02414"][Math.min(4, Math.floor(gy / 1.6))]) >>> 0;
-    p.text("EMBERSPIRE", 160, 18 - (1 - k) * 20, grad, { font: "big", scale: 3, align: "center", outline: hex("#14080a") >>> 0, a: k, shadow: hex("#4a1010") >>> 0 });
+    text("EMBERLITE", 160, 18 - (1 - k) * 20, grad, { font: "big", scale: 3, align: "center", outline: hex("#14080a") >>> 0, a: k, shadow: hex("#4a1010") >>> 0 });
     for (let i = 0; i < 40; i++) p.light(60 + i * 5, 28, hex("#ff8a2a"), 0.12 * k);
     text("A PIXELFX ROGUELITE", 160, 46, C.dim, { align: "center", a: k });
     if (!this.menu && !this.overlay) {
@@ -177,6 +178,15 @@ class Dummy extends Ent {
   }
 }
 
+// the party altar: a little stone plinth with violet runes, its halo hovering over it
+const PLINTH = ["...kkkkkkkkkk...", "..kSSSSSSSSSSk..", "..kkkkkkkkkkkk..", "...kSssSSssSk...", "...kSsvSSvsSk...", "...kSsvvvvsSk...", "...kSsvSSvsSk...", "...kSssSSssSk...", "..kkkkkkkkkkkk..", ".kSSSSSSSSSSSSk.", ".kkkkkkkkkkkkkk."];
+const PLINTH_PAL = { k: "#14111c", S: "#4a4462", s: "#2e2a40", v: "#c684ff" };
+function plinth(frame) {
+  const p = painterFor(frame), x = Math.round(this.x - 8), y = Math.round(this.y - 10);
+  p.sprite(PLINTH, PLINTH_PAL, x, y);
+  p.light(this.x, this.y - 5, hex("#c684ff"), 0.35 + 0.1 * Math.sin(this.age * 2));
+}
+
 class HubScene {
   enter() {
     G.run = null;
@@ -185,6 +195,7 @@ class HubScene {
     this.build();
     G.audio.music("hub");
     G.hud.hidden = false;
+    G.hud.hub = true;
     G.hud.boss = null;
     G.hud.title("THE LAST CAMP", "BELOW THE EMBERSPIRE", 2.6);
     if (!G.save.seenIntro) {
@@ -201,24 +212,27 @@ class HubScene {
     w.addDecor("fire/campfire", 160, 140, {}, { solid: 12 });
     w.addDecor("fire/torch", 24, FLOOR_TOP + 6, {}, {});
     w.addDecor("fire/torch", 296, FLOOR_TOP + 6, {}, {});
-    // stations
-    const portal = w.add(new Door(276, FLOOR_TOP + 16, { type: "climb", label: "THE CLIMB", palette: PAL.fire }, { fx: "pickups/power-star", opts: { palette: PAL.fire } }));
+    // four stations evenly along the back, their names on one line (dim until you walk over), the fire in the middle
+    const LABEL_Y = FLOOR_TOP - 34;
+    const S = G.save;
+    const portal = w.add(new Door(276, FLOOR_TOP + 16, { type: "climb", label: "THE CLIMB", palette: PAL.fire, fade: true, labelY: LABEL_Y - (FLOOR_TOP + 16), sub: () => t("CLIMBS {0}  ASCENSIONS {1}", S.stats.runs, S.stats.wins) }, null));
     portal.update = function (dt) {
       this.age += dt;
       this.open = 1;
       if (!director.pending && G.world.livePlayers().some((p) => Math.abs(p.x - this.x) < 12 && Math.abs(p.y - this.y) < 8)) startClimb();
     };
     const st = (x, y, o, fn) => {
-      const it = w.add(new Interactable(x, y, o));
+      const it = w.add(new Interactable(x, y, { fade: true, labelY: LABEL_Y - y, ...o }));
       it.interact = fn;
       return it;
     };
     this.stations = [
-      st(44, FLOOR_TOP + 12, { fx: "arcane/rune-circle", opts: { palette: PAL.fire }, prompt: "THE EMBER SHRINE (UPGRADES)", label: "SHRINE", labelY: -30 }, () => (this.overlay = new Shrine(() => (this.overlay = null)))),
-      st(98, FLOOR_TOP + 10, { fx: "pickups/loot-beam", opts: { palette: PAL.arcane }, prompt: "VESSELS AND PARTY (1-4 PLAYERS)", label: "PARTY", labelY: -56 }, () => this.openParty()),
-      st(214, FLOOR_TOP + 10, { fx: "scifi/hologram", opts: { palette: PAL.ember }, prompt: "THE CODEX OF EFFECTS", label: "CODEX", labelY: -44 }, () => (this.overlay = new Codex(() => { this.overlay = null; PAINTERS.hub(G.screen.bg); }))),
+      st(48, FLOOR_TOP + 12, { fx: "arcane/rune-circle", opts: { palette: PAL.fire }, prompt: "THE EMBER SHRINE (UPGRADES)", label: "SHRINE", sub: () => t("EMBERS: {0}", S.embers) }, () => (this.overlay = new Shrine(() => (this.overlay = null)))),
+      st(104, FLOOR_TOP + 12, { fx: "holy/halo", opts: { palette: PAL.arcane }, yoff: 30, prompt: "VESSELS AND PARTY (1-4 PLAYERS)", label: "PARTY", drawExtra: plinth }, () => this.openParty()),
+      st(216, FLOOR_TOP + 10, { fx: "scifi/hologram", opts: { palette: PAL.ember }, prompt: "THE CODEX OF EFFECTS", label: "CODEX", sub: () => t("{0} OF {1} WITNESSED", seenCount(), EFFECT_IDS.length) }, () => (this.overlay = new Codex(() => { this.overlay = null; PAINTERS.hub(G.screen.bg); }))),
     ];
-    w.add(new Dummy(232, 162));
+    // something to swing at, off to the side and out of the way
+    w.add(new Dummy(248, 172));
     w.party = [];
     this.syncParty();
   }
@@ -290,13 +304,8 @@ class HubScene {
   draw() {
     if (this.overlay?.fullscreen) return this.overlay.draw();
     this.w.draw(G.screen.frame);
-    const S = G.save;
-    const oy = G.party.length > 1 ? 30 : 0;
-    text(t("EMBERS {0}", S.embers), 314, oy + 5, C.ember, { align: "right" });
-    text(t("CLIMBS {0}  ASCENSIONS {1}", S.stats.runs, S.stats.wins), 314, oy + 12, C.dim, { align: "right" });
-    text(t("CODEX {0}/{1}", seenCount(), EFFECT_IDS.length), 314, oy + 19, C.dim, { align: "right" });
-    if (G.party.length === 1) text(CLASSES[S.lastClass].name, 6, 6, C.gold);
-    text(G.party.length > 1 ? t("PARTY OF {0}  -  THE PARTY ALTAR CHANGES VESSELS", G.party.length) : "[J] ATTACK  [K] SPECIAL  [L] DASH  [I] ULT   CO-OP: 2ND PAD OR [.] AT THE ALTAR", 6, 172, C.dark, { max: 310 });
+    // alone, one quiet line says how friends join (the controls are under How to Play)
+    if (G.party.length === 1 && !G.hud.prompt) text("CO-OP: PRESS A ON A 2ND PAD OR [.] TO JOIN", 160, 172, C.dark, { align: "center", max: 310 });
     G.hud.draw();
     if (this.overlay) {
       G.screen.dim = 0;
@@ -328,6 +337,7 @@ class GameScene {
     if (G.debug && this.o.room) this.run.room = +this.o.room;
     this.overlay = null;
     G.hud.hidden = false;
+    G.hud.hub = false;
     G.hud.boss = null;
     this.drawStill = drawStill;
     this.startRoom(this.o.room === "boss" ? { type: "boss" } : { type: "combat", reward: { kind: "boon", elem: pick(["fire", "ice", "shock", "holy", "shadow"]) } });
@@ -486,7 +496,7 @@ class EndScene {
       [r.size > 1 ? "PARTY" : "VESSEL", r.partySpec.map((s) => L(CLASSES[s.cls].name)).join(" ").slice(0, 30)], ["REACHED", `${BIOMES[r.biome].name}`], ["ROOMS CLEARED", r.stats_.rooms], ["FOES FELLED", r.kills],
       ["BEST COMBO", r.bestCombo], ["WARDENS SLAIN", r.stats_.bosses], ["PARRIES", r.stats_.parries ?? 0], ["TIME", `${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, "0")}`],
     ];
-    const rh = isCJK() ? 9 : 8;
+    const rh = 8;
     rows.forEach(([a, b], i) => { text(a, 88, 56 + i * rh, C.dim, { max: 100 }); text(String(b), 232, 56 + i * rh, C.white, { align: "right", max: 140 }); });
     const ey = 60 + rows.length * rh;
     text(t("EMBERS CARRIED HOME: {0}", this.earned), 160, ey, C.ember, { align: "center" });

@@ -14,7 +14,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = [path.join(root, "src/game"), path.join(root, "src/engine/input.js")];
 // debug and benchmark readouts stay in English
 const SKIP = new Set(["bench.js", "i18n.js"]);
-const IGNORE = new Set(["EMBERSPIRE", "GPU", "FPS", "BENCH", "AVG CPU MS", "WORKERS", "P1", "P2", "P3", "P4", "OK"]);
+const IGNORE = new Set(["EMBERLITE", "GPU", "FPS", "BENCH", "AVG CPU MS", "WORKERS", "P1", "P2", "P3", "P4", "OK"]);
 
 export function collect() {
   const files = [];
@@ -42,16 +42,15 @@ export function collect() {
   return keys;
 }
 
-/** The characters the game can draw in a language. */
+/** The characters the game can draw in a language: Jersey 10 on the text layer, plus its CJK set. */
 async function glyphs(id) {
   const imp = (p) => import(pathToFileURL(path.join(root, p)).href);
-  const { FONTS } = await imp("vendor/pixelfx/core/font.js");
-  const { installLatin } = await imp("src/game/lang/latin.js");
+  const { JERSEY } = await imp("src/game/lang/jersey.js");
   const { CJK } = await imp("src/game/lang/glyphs.js");
-  const F = { mini: { glyphs: { ...FONTS.mini.glyphs, "[": 1, "]": 1 } }, big: { glyphs: { ...FONTS.big.glyphs, "[": 1, "]": 1 } } };
-  installLatin({ mini: { glyphs: F.mini.glyphs }, big: { glyphs: F.big.glyphs } });
-  const set = new Set(Object.keys(F.mini.glyphs));
-  for (const s of [CJK[id], CJK.names]) if (s) for (const item of s.mini.split("|")) set.add(item.slice(0, item.indexOf(":", 1)));
+  const set = new Set();
+  const add = (src) => { for (const item of (src ?? "").split("|")) if (item) set.add(item.slice(0, item.indexOf(":", 1))); };
+  add(JERSEY.glyphs);
+  for (const s of [CJK[id], CJK.names]) if (s) add(s.hi);
   return set;
 }
 

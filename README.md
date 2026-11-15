@@ -1,4 +1,4 @@
-# Emberspire
+# Emberlite
 
 A 2.5D pixel art roguelite brawler that runs in the browser. You are a hollow vessel with an ember for a heart,
 climbing five realms of a burning spire. Every spark, slash, explosion, spell, critter, status, pickup, weather system
@@ -10,7 +10,7 @@ all **244** of them are used somewhere in play.
 ```bash
 npm install        # only esbuild, for the bundle
 npm run dev        # http://localhost:8080
-npm run build      # dist/index.html + dist/game.js, and a single-file dist/emberspire.html
+npm run build      # dist/index.html + dist/game.js, and a single-file dist/emberlite.html
 ```
 
 No build step is needed to play locally: `index.html` loads the ES modules directly.
@@ -135,8 +135,11 @@ be switched in **Options → Language**; `?lang=de` in the URL forces one.
 
 - [docs/MUSIC_PROMPTS.md](docs/MUSIC_PROMPTS.md) has a Suno prompt, an exclude list and a structure for each of
   the twelve music cues, matched to the tempo, key and mode of the synth loops in `src/engine/audio.js`.
-- [docs/font-candidates.png](docs/font-candidates.png) compares five free pixel fonts with the current one, as they
-  would look in the game.
+- Text is set in [Jersey 10](https://fonts.google.com/specimen/Jersey+10) (chosen from
+  [docs/font-candidates.png](docs/font-candidates.png)). It's drawn on its own layer at twice the game's resolution
+  (`src/game/text.js`), so a Jersey capital, 10 px with 2 px strokes, stands 5 game pixels tall like the old 3x5
+  font and keeps all its detail. Headings are a step larger. Chinese and Japanese use Fusion Pixel's 12 px cut on the
+  same layer. `python3 tools/jersey-glyphs.py` re-cuts the glyphs. The pixelfx effects keep their own lettering.
 
 ## How it's built
 
@@ -156,6 +159,8 @@ be switched in **Options → Language**; `?lang=de` in the URL forces one.
 - Effects: [pixelfx](https://github.com/patch-gg/pixelfx), MIT License, Copyright (c) 2026 Patch and Hugo Duprez,
   including code adapted from [Sprite Fusion's pixel art VFX](https://www.spritefusion.com/pixel-art-vfx) by Hugo
   Duprez and acting adapted from [Hollow Crown](https://github.com/rehan-remade/hollow-crown) by rehan-remade (MIT).
+- Text: [Jersey 10](https://github.com/scfried/soft-type-jersey), Copyright 2023 The Soft Type Project Authors, SIL Open Font License 1.1
+  ([licenses/OFL-jersey-10.txt](licenses/OFL-jersey-10.txt)).
 - Chinese and Japanese glyphs: derived from [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) by
   TakWolf, SIL Open Font License 1.1 ([licenses/OFL-fusion-pixel-font.txt](licenses/OFL-fusion-pixel-font.txt)).
 - Everything else in this repository: game code, art, sound and music are generated in code.

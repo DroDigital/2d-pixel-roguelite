@@ -1,6 +1,7 @@
 // The GPU presenter: instead of compositing 57,600 pixels a frame in JavaScript, the world's color and light, the
-// backdrop and the HUD go up as textures and one fragment shader puts them together at the display's own resolution,
-// with screen shake, dimming, flashes, an optional glow (a soft bloom of the light buffer) and optional scanlines.
+// backdrop, the HUD, the text layer (twice the game's resolution) and the top layer (screen transitions) go up as
+// textures and one fragment shader puts them together at the display's own resolution, with screen shake, dimming,
+// flashes, an optional glow (a soft bloom of the light buffer) and optional scanlines.
 
 const VS = `#version 300 es
 in vec2 a;
@@ -10,7 +11,7 @@ void main() { uv = vec2(a.x * 0.5 + 0.5, 0.5 - a.y * 0.5); gl_Position = vec4(a,
 const FS = `#version 300 es
 precision highp float;
 precision highp int;
-uniform sampler2D uBg, uCol, uLit, uHudC, uHudL;
+uniform sampler2D uBg, uCol, uLit, uHudC, uHudL, uTxt, uTopC, uTopL;
 uniform vec2 uShake, uSize;
 uniform float uDim, uFlash, uGlow, uScan, uRows;
 uniform vec3 uFlashC;
@@ -38,6 +39,12 @@ void main() {
   vec4 h = texelFetch(uHudC, p, 0);
   col = mix(col, h.rgb, h.a);
   col = min(col + texelFetch(uHudL, p, 0).rgb, 1.0);
+  // words, at twice the resolution, then the screen transitions over everything
+  vec4 t = texelFetch(uTxt, clamp(ivec2(px * 2.0), ivec2(0), ivec2(639, 359)), 0);
+  col = mix(col, t.rgb, t.a);
+  vec4 tc = texelFetch(uTopC, p, 0);
+  col = mix(col, tc.rgb, tc.a);
+  col = min(col + texelFetch(uTopL, p, 0).rgb, 1.0);
   col = mix(col, uFlashC, uFlash);
   if (uScan > 0.0) col *= 1.0 - uScan * step(0.5, fract(px.y)) * step(2.5, uRows);
   o = vec4(col, 1.0);
@@ -77,7 +84,8 @@ export class GLPresenter {
     const loc = gl.getAttribLocation(pr, "a");
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    this.tex = ["uBg", "uCol", "uLit", "uHudC", "uHudL"].map((name, i) => {
+    // the text layer (index 5) has twice the resolution of the rest
+    this.tex = ["uBg", "uCol", "uLit", "uHudC", "uHudL", "uTxt", "uTopC", "uTopL"].map((name, i) => {
       const t = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0 + i);
       gl.bindTexture(gl.TEXTURE_2D, t);
@@ -85,7 +93,7 @@ export class GLPresenter {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, W, H);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, i === 5 ? W * 2 : W, i === 5 ? H * 2 : H);
       gl.uniform1i(gl.getUniformLocation(pr, name), i);
       return t;
     });
@@ -95,11 +103,11 @@ export class GLPresenter {
     this.lost = false;
     canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); this.lost = true; });
   }
-  upload(i, u32) {
+  upload(i, u32, w = this.W, h = this.H) {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, this.tex[i]);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.W, this.H, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(u32.buffer, u32.byteOffset, this.W * this.H * 4));
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(u32.buffer, u32.byteOffset, w * h * 4));
   }
   present(s) {
     const gl = this.gl, c = gl.canvas;
@@ -110,6 +118,9 @@ export class GLPresenter {
     this.upload(2, s.frame.light);
     this.upload(3, s.hud.color);
     this.upload(4, s.hud.light);
+    this.upload(5, s.text.color, s.text.w, s.text.h);
+    this.upload(6, s.top.color);
+    this.upload(7, s.top.light);
     const u = this.u, [fr, fg, fb] = s.flashColor;
     gl.uniform2f(u.uShake, s.shake[0], s.shake[1]);
     gl.uniform1f(u.uDim, s.dim);

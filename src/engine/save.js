@@ -1,5 +1,6 @@
 // What outlives a run: embers, unlocks, upgrades, the Codex and settings, in localStorage.
 
+// (the game was called Emberspire when saves began: the key stays so nobody loses theirs)
 const KEY = "emberspire.save.v1";
 
 const DEFAULT = () => ({

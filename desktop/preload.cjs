@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
   arch: process.arch,
   versions: { electron: process.versions.electron, chrome: process.versions.chrome },
-  toggleFullscreen: () => ipcRenderer.invoke("emberspire:fullscreen"),
-  quit: () => ipcRenderer.invoke("emberspire:quit"),
-  gpu: () => ipcRenderer.invoke("emberspire:gpu"),
+  toggleFullscreen: () => ipcRenderer.invoke("emberlite:fullscreen"),
+  quit: () => ipcRenderer.invoke("emberlite:quit"),
+  gpu: () => ipcRenderer.invoke("emberlite:gpu"),
 });

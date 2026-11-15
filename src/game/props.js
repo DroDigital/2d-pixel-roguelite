@@ -80,6 +80,23 @@ export class Hazard extends Ent {
   draw() {}
 }
 
+/** How close the nearest player is to (x, y): 1 right by it, fading to 0 by about 70 px away. */
+function nearness(x, y) {
+  let d = Infinity;
+  for (const p of G.world?.livePlayers?.() ?? []) d = Math.min(d, Math.hypot(p.x - x, (p.y - y) * 1.6));
+  return Math.max(0, Math.min(1, (70 - d) / 40));
+}
+/**
+ * A label that can fade: o.fade keeps it dim until a player comes close, and o.sub() is a detail line shown only
+ * up close (the camp's stations, so the camp reads calm until you walk over to something).
+ */
+function label(o, str, x, y, frame) {
+  if (!o.fade) return text(str, x, y, C.text, { align: "center", frame });
+  const k = nearness(o.x, o.y);
+  text(str, x, y, k > 0.5 ? C.white : C.dim, { align: "center", frame, a: 0.4 + 0.6 * k });
+  if (o.sub && k > 0.4) text(o.sub(), x, y + 8, C.ember, { align: "center", frame, a: Math.min(1, (k - 0.4) * 2.5) });
+}
+
 /** Something you can walk up to and use: [E]. */
 export class Interactable extends Ent {
   constructor(x, y, o) {
@@ -93,7 +110,7 @@ export class Interactable extends Ent {
     if (this.b && !this.used) blit(frame, this.b, this.x, this.y + (this.yoff ?? 0), this.age, { light: this.lightK ?? 1 });
     this.drawExtra?.(frame);
     if (this.price !== undefined && !this.used) text(String(this.price), this.x, this.y + 4, G.run && G.run.coins >= this.price ? C.gold : C.red, { align: "center", frame });
-    if (this.label && !this.used) text(this.label, this.x, this.y + (this.labelY ?? 4), C.text, { align: "center", frame });
+    if (this.label && !this.used) label(this, this.label, this.x, this.y + (this.labelY ?? 4), frame);
   }
 }
 
@@ -117,6 +134,6 @@ export class Door extends Ent {
   draw(frame) {
     blit(frame, this.portal, this.x, this.y, this.age, { alpha: this.open, light: this.open });
     if (this.ib && this.open > 0.5) blit(frame, this.ib, this.x, this.y - 64 + Math.sin(this.age * 2) * 2 + (this.icon.yoff ?? 0), this.age, { light: 0.8 });
-    if (this.open > 0.7) text(this.spec.label ?? "", this.x, this.y - 82, C.text, { align: "center", frame });
+    if (this.open > 0.7) label(this.spec.fade ? { ...this.spec, x: this.x, y: this.y } : this.spec, this.spec.label ?? "", this.x, this.y + (this.spec.labelY ?? -82), frame);
   }
 }

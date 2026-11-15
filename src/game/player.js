@@ -10,6 +10,7 @@ import { applyStatus, aoe, damage, inRadius } from "./combat.js";
 import { hex, PAL, painterFor } from "../engine/pfx.js";
 import { RAISE_COST, RAISE_MIN } from "./run.js";
 import { t } from "./i18n.js";
+import { text } from "./ui.js";
 
 /** Co-op: how long a teammate holds USE to revive a downed player, or to raise a fallen one; how long until a downed player bleeds out. */
 const REVIVE_TIME = 1.3, RAISE_TIME = 2.6, BLEED_OUT = 25, REVIVE_RANGE = 26;
@@ -381,7 +382,7 @@ export class Player extends Vessel {
     if (!coop || this.hidden) return;
     // who's who: a tag in your color over your head, a ring while you're being rekindled
     const p = painterFor(frame), y = this.y - this.z - 46;
-    p.text(`P${this.slot + 1}`, this.x, y, this.color, { align: "center", outline: 0xff0b0a10 });
+    text(`P${this.slot + 1}`, this.x, y, this.color, { align: "center", frame });
     p.px(this.x, y + 7, this.color);
     p.light(this.x, y + 3, this.color, 0.4);
     if (this.down) {
@@ -393,7 +394,7 @@ export class Player extends Vessel {
       if (!this.fallen) {
         const b = Math.max(0, this.bleedT / BLEED_OUT);
         p.rect(bx, by + 3, Math.round(24 * b), 1, b < 0.3 && Math.floor(G.time * 6) & 1 ? 0xffffffff : 0xffc0283a);
-      } else p.text(t("FALLEN"), this.x, by + 5, 0xff8a8aa0, { align: "center", outline: 0xff0b0a10 });
+      } else text("FALLEN", this.x, by + 5, 0xff8a8aa0, { align: "center", frame });
     }
   }
 }

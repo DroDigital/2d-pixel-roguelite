@@ -1,5 +1,5 @@
 name: Desktop builds
-# Builds Emberspire for macOS, Windows and Linux on their own runners. Every run uploads the packages as workflow
+# Builds Emberlite for macOS, Windows and Linux on their own runners. Every run uploads the packages as workflow
 # artifacts (pull requests included); pushing a tag like v1.1.0 also attaches them to a GitHub release.
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
       - run: npx electron-builder ${{ matrix.target }} --publish never
       - uses: actions/upload-artifact@v4
         with:
-          name: emberspire-${{ runner.os }}
+          name: emberlite-${{ runner.os }}
           path: |
             release/*.dmg
             release/*.zip
