@@ -7,6 +7,7 @@ import { G } from "./ctx.js";
 import { t, L, isCJK } from "./i18n.js";
 import { C, text, bar, panel, icon, HEART, HEART_HALF, HEART_EMPTY, HEART_PAL, SHIELD_PAL, width } from "./ui.js";
 import { ELEM_PAL } from "./boons.js";
+import { RELIC_SLOTS, drawRelic } from "./relics.js";
 
 const COIN = [".kkk.", "kGGgk", "kGgGk", "kgGGk", ".kkk."], COIN_PAL = { k: "#2a1405", G: "#f5b92c", g: "#fff4bc" };
 const GEM = ["..k..", ".kOk.", "kOoOk", "kOOOk", ".kOk.", "..k.."], GEM_PAL = { k: "#2a0a08", O: "#ff8a2a", o: "#fff0a0" };
@@ -102,6 +103,7 @@ export class Hud {
       text(pl.cls.special.name, 40, 21, ready ? C.text : C.dark);
     }
     this.pips(p, pl, 7, 29, 14);
+    this.relics(p, pl, 283, 23);
   }
   /** At the camp nothing threatens you: just who's climbing, top left, and the embers you have to spend, top right. */
   camp(p, party) {
@@ -136,9 +138,21 @@ export class Hud {
     if (full) text("ULT", x0 + 45, 18, Math.floor(this.t * 6) & 1 ? C.gold : C.white, { outline: false });
     const cd = pl.cd.special, max = pl.cls.special.cd * pl.bd.stats.cdr;
     bar(x0 + 2, 24, 24, 1, cd <= 0 ? 1 : 1 - cd / max, cd <= 0 ? C.blue : hex("#3a5a7a") >>> 0);
-    // what this player holds (the pause menu's BOONS reads them)
-    this.pips(p, pl, x0 + 2, 27, 15);
+    // what this player holds (the pause menu's BOONS and RELICS read them)
+    this.pips(p, pl, x0 + 2, 27, pl.bd?.satchel.length ? 9 : 15);
+    this.relics(p, pl, x0 + 47, 24);
     if (pl.down && Math.floor(this.t * 3) & 1) text(pl.fallen ? t("FALLEN") : t("DOWN"), x0 + 38, 11, pl.fallen ? C.dim : C.red, { align: "center", max: 74 });
+  }
+  /** A player's relic slots: worn relics in small frames (empty frames once they've found any). */
+  relics(p, pl, x0, y0) {
+    const bd = pl.bd;
+    if (!bd?.satchel.length) return;
+    for (let i = 0; i < RELIC_SLOTS; i++) {
+      const x = x0 + i * 10, r = bd.relics[i];
+      p.rect(x, y0, 9, 9, r ? hex(r.color) >>> 0 : C.edge);
+      p.rect(x + 1, y0 + 1, 7, 7, C.panel);
+      if (r) drawRelic(r, x + 1, y0 + 1, 1, { glow: 0.12 });
+    }
   }
   /** A player's boons as little crosses in their elements' colours, `per` to a row. */
   pips(p, pl, x0, y0, per) {
@@ -167,7 +181,7 @@ export class Hud {
       }
       // the combo while it's going
       if (run.combo >= 5) {
-        const k = Math.min(1, run.comboT / 2.2), cy = this.coop ? 124 : 26;
+        const k = Math.min(1, run.comboT / 2.2), cy = this.coop ? 124 : party[0]?.bd?.satchel.length ? 36 : 26;
         text("X" + run.combo, 312, cy, run.combo >= 30 ? C.gold : C.text, { align: "right", font: "big" });
         bar(284, cy + 10, 28, 1, k, C.violet);
       }

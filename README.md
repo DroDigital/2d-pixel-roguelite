@@ -125,8 +125,17 @@ about 100 ms before these changes to about 15 ms (from about 10 fps to about 55 
   672 px, quiet rooms in 448 px, all with a deeper floor. The camera scrolls along and looks ahead of you; in a
   warden's hall it also leans toward the warden. Foes come in around the party, and rewards and doors rise where
   the party stands.
-- **Always visible**: when effects cover a player or wash them out, the game draws that player again on top of
-  everything, with a dark rim and a glow in their colour. The rim eases in and out.
+- **Always visible**: when effects cover a player or wash them out, the player shows through them. Covered pixels
+  blend the body back in under the effect's colour, strong in the middle and dithered away at the edges. The
+  effect's light on the body is softened rather than erased, and the effect darkens slightly where it meets the
+  silhouette. All of it eases in and out with how covered the player is.
+- **Relics**: only a fallen warden drops one, a choice of three that always includes its own. A player wears up
+  to three, and every relic found stays in their satchel for the rest of the climb. **Pause → Relics** wears, sets
+  aside or swaps them at any time. Taking a relic with three already worn asks which one to set aside. Equipping
+  applies a relic's numbers, hearts and hooks, and setting it aside takes them back exactly. In co-op each player
+  picks their own. Worn relics show in small frames on the HUD. Twelve relics: Hollow Crown, Drowned Pearl, Rime
+  Heart, Engine Core and Seraph Feather (the wardens' own), Ember Heart, Blood Chalice, Storm Sigil, Void Lens,
+  Gilded Idol, Thorn Mail and Sand of Ages.
 - **Rooms with choices**: doors show their reward (a boon of an element, gold, a heart, embers, focus) or lead to a
   merchant, a campfire, a blood shrine, a treasure chest, a champion or a mystery.
 - **Every vessel from the start**: all six classes are free to play from the first climb.

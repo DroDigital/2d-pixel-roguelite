@@ -33,10 +33,12 @@ function spawn(op) {
   const mod = FX[op.id];
   if (!mod) return;
   const meta = mod.meta, [w, h] = meta.size, [mx, my] = meta.origin;
-  // full-screen effects (weather, transitions) draw onto the whole screen; others get room to spill
+  // screen-sized effects (weather, transitions, impact frames, the biggest blasts) draw on exactly their own canvas,
+  // anchored at their origin like any other effect: placed where the caller put them, they cover the screen they
+  // were spawned for, wherever the camera stands in a wide room. Others get a margin to spill into.
   const full = op.full, m = full ? 0 : MARGIN;
-  const fw = full ? 320 : Math.min(640, w + 2 * m), fh = full ? 180 : Math.min(480, h + 2 * m);
-  const ox = full ? op.x : mx + m, oy = full ? op.y : my + m;
+  const fw = full ? w : Math.min(640, w + 2 * m), fh = full ? h : Math.min(480, h + 2 * m);
+  const ox = mx + m, oy = my + m;
   const inst = createFx(mod, { ...op.opts, x: ox, y: oy, flip: !!op.flip, angle: op.angle ?? 0 });
   live.set(op.uid, { inst, frame: createFrame(fw, fh), ox, oy, layered: !op.single });
 }

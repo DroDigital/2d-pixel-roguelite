@@ -27,7 +27,7 @@ export function realmBakes(B) {
   for (const id of new Set([...B.a, ...B.b])) if (ENEMIES[id].type === "critter") list.push([ENEMIES[id].fx, ENEMIES[id].opts ?? {}, 24]);
   B.decor({ addDecor: (id, x, y, o = {}, s = {}) => list.push([id, o, s.fps ?? 20]) });
   list.push(["arcane/portal", { width: 14, height: 26, palette: B.door }, 16]);
-  for (const [id, o] of [["pickups/coin-spin", {}], ["pickups/xp-orb", {}], ["pickups/gem-spin", { palette: PAL.fire }], ["pickups/heart-pickup", {}], ["pickups/power-star", { palette: PAL.gold }]]) list.push([id, o, 20]);
+  for (const [id, o] of [["pickups/coin-spin", {}], ["pickups/xp-orb", {}], ["pickups/gem-spin", { palette: PAL.fire }], ["pickups/heart-pickup", {}], ["pickups/power-star", { palette: PAL.gold }], ["pickups/crystal-shard", { palette: PAL.gold }]]) list.push([id, o, 20]);
   for (const e of Object.values(ELEM_PAL)) list.push(["pickups/power-star", { palette: e }, 20]);
   return list;
 }
@@ -238,7 +238,12 @@ export class Room {
         y = rnd(FLOOR_TOP + 6, FLOOR_BOT - 4);
       } while (w.players.some((p) => Math.hypot(x - p.x, (y - p.y) * 2) < 70) && tries++ < 30);
       const e = makeEnemy(o.id, x, y, this.lvl, o.elite);
-      w.after(i * 0.18, () => summon(e, this.biome.spawn));
+      // each foe arrives a moment after the last: until it has, the room can't count as quiet
+      this.incoming = (this.incoming ?? 0) + 1;
+      w.after(i * 0.18, () => {
+        this.incoming--;
+        summon(e, this.biome.spawn);
+      });
     });
     this.fighting = true;
   }
@@ -252,7 +257,8 @@ export class Room {
         this.spawnWave();
         this.lastWave = this.t;
       }
-      if (!this.waves.length && alive === 0 && this.fighting && this.t > 1.5 && !w.ents.some((e) => e.spawnT > 0)) this.clear();
+      // (count again: a wave may have just been called in, and its foes are still on their way)
+      else if (!this.waves.length && !this.incoming && w.enemies().length === 0 && this.fighting && this.t > 1.5 && !w.ents.some((e) => e.spawnT > 0)) this.clear();
     }
     // the nearest thing each player can use
     let prompt = null;
@@ -290,6 +296,13 @@ export class Room {
   }
   giveReward() {
     const w = G.world, run = this.run, s = this.spec, x = (this.exitX = this.partyX()), y = 140;
+    // a warden leaves a relic (all but the last: that climb is won)
+    if (this.type === "boss" && run.biome < BIOMES.length - 1) {
+      w.spawnFx("pickups/loot-beam", x, y, { palette: PAL.gold }, { life: 3, prio: 2 });
+      sfx("chest");
+      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/crystal-shard", fxOpts: { palette: PAL.gold }, magnet: 0, delay: 0.6, onTake: () => { sfx("powerup"); G.scene.openRelics(this.biome.boss, () => this.openDoors()); } }));
+      return;
+    }
     const kind = this.type === "elite" ? "boon+" : this.type === "combat" ? s.reward.kind : null;
     if (!kind) return this.openDoors();
     w.spawnFx("pickups/loot-beam", x, y, kind === "boon+" ? { palette: PAL.gold } : {}, { life: 2.2, prio: 1 });

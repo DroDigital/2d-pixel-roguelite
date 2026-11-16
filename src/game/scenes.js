@@ -16,10 +16,11 @@ import { Room, BIOMES, ROOMS_PER_BIOME, prebakeAll } from "./rooms.js";
 import { Ent } from "./entity.js";
 import { Interactable, Door } from "./props.js";
 import { C, text, para, panel } from "./ui.js";
-import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu } from "./menus.js";
+import { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu, RelicPick, RelicMenu } from "./menus.js";
+import { relicOffer } from "./relics.js";
 
 // the menus, for tools/screens.mjs (screenshots of every screen in every language)
-G.ui = { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu };
+G.ui = { ListMenu, BoonPick, BoonList, optionsMenu, Controls, ClassAltar, Shrine, Codex, PartyMenu, RelicPick, RelicMenu };
 import { BOONS } from "./boons.js";
 import { damage, kill, applyStatus } from "./combat.js";
 import { Bench, seedRandom } from "./bench.js";
@@ -413,10 +414,28 @@ class GameScene {
     };
     next(0);
   }
+  /** A fallen warden's relics: every player chooses one of their own, one after another. */
+  openRelics(boss, then) {
+    const run = this.run, coop = run.size > 1, pickers = run.players.filter((p) => !p.gone);
+    const next = (i) => {
+      if (i >= pickers.length) return then?.();
+      const p = pickers[i], bd = p.bd;
+      this.overlay = new RelicPick(relicOffer(bd, boss), (r) => {
+        this.overlay = null;
+        if (r) {
+          this.world.spawnFx("ui/level-up", p.x, p.y, { text: r.name.length <= 12 ? r.name : "RELIC!", actor: p.snapshot() }, { follow: p, prio: 2 });
+          sfx("powerup");
+        }
+        next(i + 1);
+      }, { build: bd, player: coop ? p : null, boss });
+    };
+    next(0);
+  }
   pause() {
     this.overlay = new ListMenu("PAUSED", [
       { label: "RESUME", act: () => (this.overlay = null) },
       { label: "BOONS", act: () => (this.overlay = new BoonList(() => this.pause())) },
+      { label: "RELICS", act: () => (this.overlay = new RelicMenu(() => this.pause())) },
       { label: "OPTIONS", act: () => (this.overlay = optionsMenu(() => this.pause())) },
       { label: "ABANDON CLIMB", act: () => { this.overlay = null; this.run.lives = 0; for (const p of this.players) p.dead = true; this.run.over = true; this.onPlayerDeath(); } },
     ], { onBack: () => (this.overlay = null), sub: t("{0} - ROOM {1}", BIOMES[this.run.biome].name, this.run.room + 1) });

@@ -215,6 +215,9 @@ export class World {
           bg.set(src.subarray(from, from + v.w), (v.sy + r) * VIEW_W + v.sx);
         }
     }
+    // effects that belong to the screen, not the room (an impact frame): over every view at once
+    frame.ox = frame.oy = 0;
+    this.fx.drawLayer(frame, "screen");
     this.cam.drawOverlay(views);
   }
   /** A frame the size of a split view (kept between frames). */

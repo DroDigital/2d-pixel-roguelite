@@ -490,8 +490,8 @@ class Boss extends Vessel {
       this.phase++;
       this.enraged = true;
       applyStatus(this, "rage", 9999);
-      G.world.spawnFx("ui/health-bar-hit", viewX(160), 150, { from: this.phases[this.phase - 1] + 0.1, to: this.phases[this.phase - 1] }, { layer: "over", prio: 2 });
-      G.world.spawnFx("impacts/impact-frame", viewX(160), 90, {}, { layer: "over", prio: 2 });
+      G.world.spawnFx("ui/health-bar-hit", 160, 150, { from: this.phases[this.phase - 1] + 0.1, to: this.phases[this.phase - 1] }, { layer: "screen", prio: 2 });
+      G.world.spawnFx("impacts/impact-frame", 160, 90, {}, { layer: "screen", prio: 2 });
       G.world.hitstop(0.25);
       sfx("roar", 0.8, 1.2);
       this.busy = 0.6;
@@ -552,7 +552,7 @@ class Boss extends Vessel {
     G.screen.flash = 0.8;
     G.screen.flashColor = [255, 255, 255];
     sfx("bigboom");
-    w.spawnFx("impacts/impact-frame", viewX(160), 90, {}, { layer: "over", prio: 2 });
+    w.spawnFx("impacts/impact-frame", 160, 90, {}, { layer: "screen", prio: 2 });
     w.add(new Corpse(this, this.def.death, this.def.deathOpts, { fadeBody: this.def.death === "holy/resurrection" ? 2.5 : 0 }));
     w.spawnFx(this.kind === "seraph" ? "explosions/nuke" : "explosions/big-explosion", this.x, this.y, {}, { prio: 2 });
     this.gone = true;

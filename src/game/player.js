@@ -7,13 +7,17 @@ import { Vessel } from "./entity.js";
 import { G, sfx, clampX, clampY } from "./ctx.js";
 import { resolveMoveHit } from "./skills.js";
 import { applyStatus, aoe, damage, inRadius } from "./combat.js";
-import { hex, PAL, painterFor } from "../engine/pfx.js";
+import { hex, PAL, painterFor, mix, scale } from "../engine/pfx.js";
 import { RAISE_COST, RAISE_MIN, buildOf } from "./run.js";
 import { t } from "./i18n.js";
 import { text } from "./ui.js";
 
 /** Co-op: how long a teammate holds USE to revive a downed player, or to raise a fallen one; how long until a downed player bleeds out. */
 const REVIVE_TIME = 1.3, RAISE_TIME = 2.6, BLEED_OUT = 25, REVIVE_RANGE = 26;
+
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+/** Light scaled by f (0..1). */
+const scaleLight = (l, f) => (0xff000000 | ((((l >>> 16) & 255) * f) << 16) | ((((l >>> 8) & 255) * f) << 8) | ((l & 255) * f)) >>> 0;
 
 export const PLAYER_COLORS = ["#ff9a3c", "#58b4ec", "#7ee88a", "#ff86e6"];
 
@@ -260,9 +264,11 @@ export class Player extends Vessel {
     }
   }
   /**
-   * After everything (effects, the "over" layer, weather) is drawn: if most of this player was covered or washed out
-   * by light, paint them again on top, crisp, with a dark rim and a glow in their colour, so you never lose yourself
-   * in a fight. The rim eases in and out instead of blinking.
+   * After everything (effects, the "over" layer, weather) is drawn: if much of this player is covered or washed out,
+   * let them show through it. Covered pixels blend the body back in under the effect's colour (strong in the
+   * middle, dissolving at the edges), the effect's light on the body is softened rather than erased, and the effect
+   * darkens a little where it touches the silhouette, a contact shadow that separates without an outline. All of
+   * it eases in and out with how covered they are.
    */
   drawOnTop(frame) {
     const pose = this.pose;
@@ -279,36 +285,48 @@ export class Player extends Vessel {
     }
     if (!seen) return;
     const want = covered / seen > 0.22 ? 1 : 0;
-    this.occl = (this.occl ?? 0) + (want - (this.occl ?? 0)) * (want ? 0.35 : 0.08);
-    if (this.occl < 0.04) return;
-    const blink = this.inv > 0 && Math.floor(this.inv * 20) & 1;
-    drawBody(frame, pose, this.pal, this.x, this.y - this.z, { flip, clearLight: true, flash: this.flash > 0 ? 0.85 : 0, alpha: blink ? 0.45 : 1 });
-    // the rim: dark right against the body, the player's colour (light) just outside it
+    this.occl = (this.occl ?? 0) + (want - (this.occl ?? 0)) * (want ? 0.3 : 0.08);
+    const k = this.occl;
+    if (k < 0.04) return;
+    // the silhouette as a mask, two pixels of margin round it
     const x0 = r.x0 - 2, y0 = r.y0 - 2, w = r.x1 - r.x0 + 5, h = r.y1 - r.y0 + 5, m = (this._mask ??= { a: new Uint8Array(0) });
     if (m.a.length < w * h) m.a = new Uint8Array(w * h);
     const M = m.a;
     M.fill(0, 0, w * h);
     for (let i = 0; i < r.n; i++) M[(r.ys[i] - y0) * w + (r.xs[i] - x0)] = 1;
-    const ink = 0xff0b0a10, col = this.device ? this.color : this.ghostC, k = this.occl;
-    const cr = (col & 255) * 0.55 * k, cg = ((col >>> 8) & 255) * 0.55 * k, cb = ((col >>> 16) & 255) * 0.55 * k;
+    const at = (mx, my) => {
+      const lx = mx + x0, x = flip ? X - lx - 1 : X + lx, y = Y + my + y0;
+      return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x;
+    };
+    const blink = this.inv > 0 && Math.floor(this.inv * 20) & 1, flash = this.flash > 0 ? 0.85 : 0;
+    const core = (blink ? 0.4 : 0.66 + 0.28 * k) * Math.min(1, k * 1.6), soft = 1 - 0.72 * k;
+    for (let i = 0; i < r.n; i++) {
+      const mx = r.xs[i] - x0, my = r.ys[i] - y0, j = at(mx, my);
+      if (j < 0) continue;
+      let own = map.get(r.color[i]) ?? r.color[i];
+      if (flash) own = mix(own, 0xffffffff, flash) >>> 0;
+      const cur = C[j];
+      if (cur !== own) {
+        // the edges of the body dissolve into the effect (dithered), its middle comes through strongly
+        const edge = !M[my * w + mx - 1] || !M[my * w + mx + 1] || !M[(my - 1) * w + mx] || !M[(my + 1) * w + mx];
+        const a = edge ? core * (BAYER4[((j / W) & 3) * 4 + (j % W & 3)] < 0.5 ? 0.75 : 0.45) : core;
+        C[j] = cur ? (0xff000000 | mix(cur, own, a)) >>> 0 : own;
+      }
+      // lit by the blast, not erased by it
+      if (L[j] & 0xffffff) L[j] = scaleLight(L[j], soft);
+    }
+    // a contact shadow where the effect meets the silhouette: what's drawn there darkens a touch, its light dims
     for (let my = 0; my < h; my++)
       for (let mx = 0; mx < w; mx++) {
         if (M[my * w + mx]) continue;
-        let ring = 0;
-        for (let d = 1; d <= 2 && !ring; d++)
-          if ((mx >= d && M[my * w + mx - d]) || (mx + d < w && M[my * w + mx + d]) || (my >= d && M[(my - d) * w + mx]) || (my + d < h && M[(my + d) * w + mx])) ring = d;
-        if (!ring) continue;
-        const lx = mx + x0, x = flip ? X - lx - 1 : X + lx, y = Y + my + y0;
-        if (x < 0 || y < 0 || x >= W || y >= H) continue;
-        const j = y * W + x, l = L[j];
-        if (ring === 1) {
-          if (k > 0.5 || (x + y) & 1) C[j] = ink;
-          L[j] = 0;
-        } else {
-          // the outer ring: what's there dims, and the player's colour glows in it
-          const dim = 1 - 0.6 * k;
-          L[j] = (0xff000000 | (Math.min(255, ((l >>> 16) & 255) * dim + cb) << 16) | (Math.min(255, ((l >>> 8) & 255) * dim + cg) << 8) | Math.min(255, (l & 255) * dim + cr)) >>> 0;
-        }
+        const near1 = (mx > 0 && M[my * w + mx - 1]) || (mx + 1 < w && M[my * w + mx + 1]) || (my > 0 && M[(my - 1) * w + mx]) || (my + 1 < h && M[(my + 1) * w + mx]);
+        const near2 = !near1 && ((mx > 1 && M[my * w + mx - 2]) || (mx + 2 < w && M[my * w + mx + 2]) || (my > 1 && M[(my - 2) * w + mx]) || (my + 2 < h && M[(my + 2) * w + mx]));
+        if (!near1 && !near2) continue;
+        const j = at(mx, my);
+        if (j < 0) continue;
+        const f = near1 ? 1 - 0.42 * k : 1 - 0.18 * k;
+        if (C[j]) C[j] = ((C[j] & 0xff000000) | (scale(C[j], f) & 0xffffff)) >>> 0;
+        if (L[j] & 0xffffff) L[j] = scaleLight(L[j], near1 ? 1 - 0.6 * k : 1 - 0.3 * k);
       }
   }
   onMoveHit(h, perf) {
