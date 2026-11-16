@@ -234,6 +234,9 @@ export class Build {
     this.boons = [];
     this.hooks = Object.fromEntries(HOOKS.map((h) => [h, []]));
     this.rerolls = up("reroll");
+    // the wardens' relics: up to three worn, every one found kept in the satchel for the climb
+    this.relics = [];
+    this.satchel = [];
   }
   get clsId() {
     return this.owner.cls.id;

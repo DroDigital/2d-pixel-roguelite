@@ -7,6 +7,7 @@ import { G, sfx } from "./ctx.js";
 import { t, L, LANGS, lang_, setLang, isCJK } from "./i18n.js";
 import { C, text, para, panel, bar, icon, wrap, width } from "./ui.js";
 import { ELEM_PAL, ELEM_NAME, RARITY_COLOR } from "./boons.js";
+import { RELIC_SLOTS, equip, unequip, drawRelic } from "./relics.js";
 import { CLASSES, CLASS_ORDER } from "./classes.js";
 import { UPGRADES } from "./meta.js";
 import { DEVICE_LABEL } from "../engine/input.js";
@@ -190,6 +191,184 @@ export class BoonList {
     const ups = UPGRADES.filter((u) => (G.save.upgrades[u.id] ?? 0) > 0).map((u) => `${L(u.name)} ${G.save.upgrades[u.id]}`);
     text(ups.length ? t("CAMP: {0}", ups.join("  ")) : t("CAMP: NO UPGRADES YET"), 160, 153, C.dim, { align: "center", max: 284 });
     text(P.length > 1 ? "LEFT/RIGHT: PLAYER   UP/DOWN: READ   ESC: BACK" : "UP/DOWN: READ   ESC: BACK", 160, 162, C.dark, { align: "center", max: 284 });
+  }
+}
+
+/**
+ * A fallen warden's relics: three cards, take one. With three already worn, choose which to set aside for it (or
+ * keep the new one in the satchel); nothing is ever lost, Pause > Relics swaps them any time.
+ */
+export class RelicPick {
+  hideHud = true;
+  constructor(choices, onDone, o = {}) {
+    Object.assign(this, { choices, onDone, i: Math.min(1, choices.length - 1), t: 0, build: o.build, player: o.player ?? null, boss: o.boss, stage: "pick", j: 0, taken: null });
+    sfx("chest", 0.8);
+  }
+  finish() {
+    G.input.flush();
+    this.onDone(this.taken);
+    return false;
+  }
+  update(dt) {
+    this.t += dt;
+    if (this.t < 0.4) return true;
+    const n = navOf(this.player), bd = this.build;
+    if (this.stage === "pick") {
+      if (!this.choices.length) return n.ok || n.back ? this.finish() : true;
+      if (n.left) (this.i = (this.i + this.choices.length - 1) % this.choices.length), sfx("ui");
+      if (n.right) (this.i = (this.i + 1) % this.choices.length), sfx("ui");
+      if (n.ok) {
+        const r = (this.taken = this.choices[this.i]);
+        bd.satchel.push(r);
+        sfx("powerup");
+        if (bd.relics.length < RELIC_SLOTS) return equip(bd, r), this.finish();
+        this.stage = "replace";
+        this.j = 0;
+        this.t = 0.2;
+      }
+      return true;
+    }
+    // full: which worn relic makes room (the last row keeps the new one in the satchel instead)
+    const rows = bd.relics.length + 1;
+    if (n.up) (this.j = (this.j + rows - 1) % rows), sfx("ui");
+    if (n.down) (this.j = (this.j + 1) % rows), sfx("ui");
+    if (n.ok) {
+      if (this.j < bd.relics.length) {
+        unequip(bd, bd.relics[this.j]);
+        equip(bd, this.taken);
+        sfx("ok");
+      }
+      return this.finish();
+    }
+    return true;
+  }
+  draw() {
+    const who = this.player, hp = painterFor(G.screen.hud), bd = this.build;
+    const title = who ? `P${who.slot + 1} - ${L("A WARDEN'S RELIC")}` : "A WARDEN'S RELIC";
+    text(title, 160, 10, who ? who.color : C.gold, { align: "center", font: "big" });
+    if (this.stage === "pick") {
+      const n = this.choices.length, cw = 94, gap = 8, x0 = 160 - (n * cw + (n - 1) * gap) / 2, k = Math.min(1, this.t * 3);
+      if (!n) return text("NOTHING LEFT TO GIVE. PRESS ANY KEY.", 160, 90, C.text, { align: "center" });
+      this.choices.forEach((r, i) => {
+        const sel = i === this.i, x = Math.round(x0 + i * (cw + gap)), y = Math.round(28 + (1 - k) * 40 - (sel ? 3 : 0)), rc = hex(r.color) >>> 0;
+        panel(x, y, cw, 124, { edge: sel ? rc : C.edge, hi: sel ? C.white : C.edgeHi, glow: sel ? rc : undefined, a: 0.95 });
+        // the relic itself, three times its size, on a little plinth of light
+        const bob = Math.round(Math.sin(this.t * 3 + i) * 1.5);
+        hp.rect(x + cw / 2 - 14, y + 40, 28, 1, sel ? rc : C.edge);
+        drawRelic(r, x + cw / 2 - 10, y + 12 + bob, 3, { glow: sel ? 0.5 : 0.2 });
+        if (r.boss === this.boss) text("THE WARDEN'S OWN", x + cw / 2, y + 45, C.gold, { align: "center", max: cw - 6 });
+        const nl = wrap(r.name, cw - 8, "mini");
+        nl.forEach((l, j) => text(l, x + cw / 2, y + 54 + j * 7, sel ? C.white : rc, { align: "center" }));
+        para(r.desc, x + 5, y + 58 + nl.length * 7, cw - 10, sel ? C.text : C.dim, { align: "center" });
+      });
+      this.slots(160, 158);
+      text(who?.device ? t("P{0}: LEFT/RIGHT CHOOSE   ATTACK TAKE", who.slot + 1) : t("[ARROWS] CHOOSE   [ENTER] TAKE"), 160, 168, C.dim, { align: "center" });
+      return;
+    }
+    // full: the swap
+    panel(70, 30, 180, 120, { glow: hex(this.taken.color) >>> 0, a: 0.95 });
+    drawRelic(this.taken, 150, 36, 3, { glow: 0.5 });
+    text(this.taken.name, 160, 60, hex(this.taken.color) >>> 0, { align: "center" });
+    text("YOUR RELIC SLOTS ARE FULL. SET ONE ASIDE?", 160, 70, C.text, { align: "center", max: 172 });
+    bd.relics.forEach((r, j) => {
+      const y = 84 + j * 14, sel = j === this.j;
+      if (sel) hp.rect(80, y - 3, 160, 13, hex("#2a2040") >>> 0);
+      drawRelic(r, 86, y - 1, 1, { glow: 0 });
+      text(t("SET ASIDE {0}", L(r.name)), 98, y + 1, sel ? C.white : C.dim, { max: 138 });
+    });
+    const y = 84 + bd.relics.length * 14, sel = this.j === bd.relics.length;
+    if (sel) hp.rect(80, y - 3, 160, 13, hex("#2a2040") >>> 0);
+    text("KEEP THE NEW ONE IN THE SATCHEL", 160, y + 1, sel ? C.white : C.dim, { align: "center", max: 156 });
+    text("SWAP RELICS ANY TIME: PAUSE > RELICS", 160, 140, C.dark, { align: "center", max: 172 });
+  }
+  /** The three slots, worn relics in them. */
+  slots(cx, y) {
+    const bd = this.build, hp = painterFor(G.screen.hud);
+    for (let i = 0; i < RELIC_SLOTS; i++) {
+      const x = cx - 16 + i * 11 - 15;
+      hp.rect(x, y - 1, 9, 9, C.edge);
+      hp.rect(x + 1, y, 7, 7, C.panel);
+      if (bd.relics[i]) drawRelic(bd.relics[i], x + 1, y, 1, { glow: 0.15 });
+    }
+    text(t("WORN {0}/{1}", bd.relics.length, RELIC_SLOTS), cx + 14, y + 1, C.dim);
+  }
+}
+
+/** Pause > Relics: every relic each player found, the worn ones first. Wear, set aside, or swap, any time. */
+export class RelicMenu {
+  constructor(onBack) {
+    this.onBack = onBack;
+    this.p = 0;
+    this.i = 0;
+    this.swap = -1; // choosing which worn relic to set aside, for the selected one
+  }
+  get players() {
+    return G.run?.players ?? [];
+  }
+  list(bd) {
+    return [...bd.relics, ...bd.satchel.filter((r) => !bd.relics.includes(r))];
+  }
+  update() {
+    const n = nav(), P = this.players, bd = P[this.p]?.bd;
+    if (!bd) return n.back && this.onBack(), true;
+    const L_ = this.list(bd);
+    if (this.swap >= 0) {
+      if (n.up) (this.swap = (this.swap + bd.relics.length - 1) % bd.relics.length), sfx("ui");
+      if (n.down) (this.swap = (this.swap + 1) % bd.relics.length), sfx("ui");
+      if (n.ok) {
+        const r = L_[this.i];
+        unequip(bd, bd.relics[this.swap]);
+        equip(bd, r);
+        sfx("powerup", 0.6);
+        this.swap = -1;
+        this.i = bd.relics.indexOf(r);
+      }
+      if (n.back) (this.swap = -1), sfx("ui");
+      return true;
+    }
+    if (P.length > 1 && n.left) (this.p = (this.p + P.length - 1) % P.length), (this.i = 0), sfx("ui");
+    if (P.length > 1 && n.right) (this.p = (this.p + 1) % P.length), (this.i = 0), sfx("ui");
+    if (L_.length && n.up) (this.i = (this.i + L_.length - 1) % L_.length), sfx("ui");
+    if (L_.length && n.down) (this.i = (this.i + 1) % L_.length), sfx("ui");
+    if (L_.length && n.ok) {
+      const r = L_[this.i];
+      if (bd.relics.includes(r)) (unequip(bd, r), sfx("nope", 0.6), (this.i = this.list(bd).indexOf(r)));
+      else if (bd.relics.length < RELIC_SLOTS) (equip(bd, r), sfx("powerup", 0.6), (this.i = bd.relics.indexOf(r)));
+      else (this.swap = 0), sfx("ui");
+    } else if (n.back) this.onBack();
+    return true;
+  }
+  draw() {
+    const P = this.players, pl = P[this.p], hp = painterFor(G.screen.hud);
+    panel(14, 10, 292, 160, { glow: pl && P.length > 1 ? pl.color : C.gold });
+    text("RELICS", 160, 15, C.gold, { align: "center", font: "big" });
+    if (!pl) return;
+    const bd = pl.bd, L_ = this.list(bd);
+    if (P.length > 1) {
+      P.forEach((q, k) => {
+        const x = 160 + (k - (P.length - 1) / 2) * 70, sel = k === this.p, s = `P${q.slot + 1} ${L(q.cls.name)}`;
+        if (sel) hp.rect(x - 32, 33, 64, 1, q.color);
+        text(s, x, 26, sel ? q.color : C.dark, { align: "center", max: 66 });
+      });
+    } else text(t("WORN {0}/{1}", bd.relics.length, RELIC_SLOTS), 160, 26, C.dim, { align: "center" });
+    if (!L_.length) {
+      text("NO RELICS YET", 160, 70, C.dim, { align: "center" });
+      text("ONLY A FALLEN WARDEN GIVES ONE", 160, 80, C.dark, { align: "center" });
+    }
+    L_.forEach((r, i) => {
+      const y = 38 + i * 12, sel = i === this.i, worn = bd.relics.includes(r), marked = this.swap >= 0 && bd.relics[this.swap] === r;
+      if (sel || marked) hp.rect(22, y - 2, 276, 11, hex(marked ? "#4a1c28" : "#2a2040") >>> 0);
+      drawRelic(r, 26, y - 1, 1, { dim: worn ? 0 : 0.45, glow: worn ? 0.2 : 0 });
+      text(r.name, 38, y, worn ? hex(r.color) >>> 0 : C.dim, { max: 150 });
+      text(worn ? "WORN" : "IN THE SATCHEL", 292, y, worn ? C.green : C.dark, { align: "right", max: 96 });
+    });
+    const cur = L_[this.i];
+    if (cur) {
+      hp.rect(22, 126, 276, 1, C.edge);
+      para(cur.desc, 26, 130, 268, C.text);
+    }
+    const hint = this.swap >= 0 ? "UP/DOWN: WHICH TO SET ASIDE   ENTER: SWAP   ESC: CANCEL" : P.length > 1 ? "LEFT/RIGHT: PLAYER   ENTER: WEAR / SET ASIDE   ESC: BACK" : "ENTER: WEAR / SET ASIDE   ESC: BACK";
+    text(hint, 160, 162, this.swap >= 0 ? C.gold : C.dark, { align: "center", max: 284 });
   }
 }
 
