@@ -4,7 +4,7 @@
 import { PAL, READY } from "../engine/pfx.js";
 import { vesselPal } from "../engine/body.js";
 import { Vessel, Critter, Corpse, Projectile } from "./entity.js";
-import { G, sfx, rnd, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT, pick, partySize, partyHp } from "./ctx.js";
+import { G, sfx, rnd, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT, X_MIN, X_MAX, pick, partySize, partyHp } from "./ctx.js";
 import { damage, aoe, applyStatus, STATUS } from "./combat.js";
 import { resolveMoveHit, fxAt } from "./skills.js";
 
@@ -123,7 +123,7 @@ const AI = {
     const dx = t.x - e.x, want = e.def.range ?? 110;
     const side = Math.sign(e.x - t.x) || 1;
     let wantX = t.x + side * want;
-    if (wantX < 20 || wantX > 300) wantX = t.x - side * want;
+    if (wantX < X_MIN + 6 || wantX > X_MAX - 6) wantX = t.x - side * want;
     const aligned = Math.abs(t.y - e.y) < 8 && Math.abs(Math.abs(dx) - want) < 40;
     e.facing = Math.sign(dx) || e.facing;
     if (aligned && e.cool <= 0 && tokens() < 2 + partySize()) return e.attack(pick(e.def.moves));

@@ -6,8 +6,19 @@ export const G = {
   time: 0, frame: 0, fps: 60, debug: false,
 };
 
-// the arena: a back wall above, a floor band the characters walk on
-export const FLOOR_TOP = 118, FLOOR_BOT = 172, X_MIN = 14, X_MAX = 306;
+// the arena: a back wall above, a floor band the characters walk on. A room is wider than the screen (VIEW_W): the
+// camera scrolls along it. X_MAX and ROOM_W change with each room (setRoomWidth); importers see the live values.
+export const VIEW_W = 320, VIEW_H = 180;
+export const FLOOR_TOP = 104, FLOOR_BOT = 174, X_MIN = 14;
+export let X_MAX = 306, ROOM_W = 320;
+export function setRoomWidth(w) {
+  ROOM_W = w;
+  X_MAX = w - 14;
+}
+/** The room's middle. */
+export const roomMid = () => ROOM_W / 2;
+/** A point on screen (0..320) as a point in the room, where the camera is now. */
+export const viewX = (x) => (G.world?.camX ?? 0) + x;
 export const clampX = (x) => Math.max(X_MIN, Math.min(X_MAX, x));
 export const clampY = (y) => Math.max(FLOOR_TOP + 2, Math.min(FLOOR_BOT, y));
 

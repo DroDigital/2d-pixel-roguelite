@@ -97,14 +97,11 @@ export class Hud {
     bar(7, 16, 52, 3, pl.ult / 100, full ? hex("#ffd84a") >>> 0 : hex("#ff8a2a") >>> 0, { glow: full ? 0.3 + pulse * 0.4 : 0.12 });
     text(full ? "ULT READY [I]" : "ULT", 62, 15, full ? (Math.floor(this.t * 6) & 1 ? C.gold : C.white) : C.dim);
     if (pl.cls) {
-      const cd = pl.cd.special, max = pl.cls.special.cd * run.stats.cdr, ready = cd <= 0;
+      const cd = pl.cd.special, max = pl.cls.special.cd * pl.bd.stats.cdr, ready = cd <= 0;
       bar(7, 22, 30, 2, ready ? 1 : 1 - cd / max, ready ? C.blue : hex("#3a5a7a") >>> 0);
       text(pl.cls.special.name, 40, 21, ready ? C.text : C.dark);
     }
-    run.boons.forEach((b, i) => {
-      const pal = ELEM_PAL[b.elem] ?? PAL.metal, x = 7 + (i % 14) * 5, y = 29 + Math.floor(i / 14) * 5, c = hex(pal[Math.floor(pal.length * 0.65)]) >>> 0;
-      p.px(x + 1, y, c); p.px(x, y + 1, c); p.px(x + 1, y + 1, hex(pal[pal.length - 1]) >>> 0); p.px(x + 2, y + 1, c); p.px(x + 1, y + 2, c);
-    });
+    this.pips(p, pl, 7, 29, 14);
   }
   /** At the camp nothing threatens you: just who's climbing, top left, and the embers you have to spend, top right. */
   camp(p, party) {
@@ -137,9 +134,18 @@ export class Hud {
     const full = pl.ult >= 100;
     bar(x0 + 2, 19, 40, 2, pl.ult / 100, full ? hex("#ffd84a") >>> 0 : hex("#ff8a2a") >>> 0, { glow: full ? 0.4 : 0.1 });
     if (full) text("ULT", x0 + 45, 18, Math.floor(this.t * 6) & 1 ? C.gold : C.white, { outline: false });
-    const cd = pl.cd.special, max = pl.cls.special.cd * run.stats.cdr;
+    const cd = pl.cd.special, max = pl.cls.special.cd * pl.bd.stats.cdr;
     bar(x0 + 2, 24, 24, 1, cd <= 0 ? 1 : 1 - cd / max, cd <= 0 ? C.blue : hex("#3a5a7a") >>> 0);
+    // what this player holds (the pause menu's BOONS reads them)
+    this.pips(p, pl, x0 + 2, 27, 15);
     if (pl.down && Math.floor(this.t * 3) & 1) text(pl.fallen ? t("FALLEN") : t("DOWN"), x0 + 38, 11, pl.fallen ? C.dim : C.red, { align: "center", max: 74 });
+  }
+  /** A player's boons as little crosses in their elements' colours, `per` to a row. */
+  pips(p, pl, x0, y0, per) {
+    (pl.bd?.boons ?? []).forEach((b, i) => {
+      const pal = ELEM_PAL[b.elem] ?? PAL.metal, x = x0 + (i % per) * 5, y = y0 + Math.floor(i / per) * 5, c = hex(pal[Math.floor(pal.length * 0.65)]) >>> 0;
+      p.px(x + 1, y, c); p.px(x, y + 1, c); p.px(x + 1, y + 1, hex(pal[pal.length - 1]) >>> 0); p.px(x + 2, y + 1, c); p.px(x + 1, y + 2, c);
+    });
   }
   draw() {
     const run = G.run, hud = G.screen.hud, p = painterFor(hud);

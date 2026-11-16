@@ -4,13 +4,17 @@
 import { PAL, READY } from "../engine/pfx.js";
 import { vesselPal } from "../engine/body.js";
 import { Vessel, Projectile, Corpse } from "./entity.js";
-import { G, sfx, rnd, pick, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT } from "./ctx.js";
+import { G, sfx, rnd, pick, chance, clampX, clampY, FLOOR_TOP, FLOOR_BOT, viewX } from "./ctx.js";
 import { aoe, applyStatus, damage } from "./combat.js";
 import { resolveMoveHit } from "./skills.js";
 import { makeEnemy, summon, VP, geyserAt } from "./enemies.js";
 import { Hazard } from "./props.js";
 import { Pickup } from "./entity.js";
 import { ember, coin } from "./run.js";
+
+/** A spot across the warden's target's screen (0..320) as a spot in the hall: wide halls scroll, so arena-wide
+ * attacks are laid out around whoever is being hunted. */
+const VX = (x) => clampX((G.world.focus?.x ?? G.world.nearestPlayer?.(viewX(160), 140)?.x ?? viewX(160)) - 160 + x);
 import { partySize, partyHp } from "./ctx.js";
 
 const ev = (t, fn) => ({ t, fn });
@@ -62,7 +66,7 @@ const BOSSES = {
       summon: { w: 1.4, when: (b) => G.world.enemies().length < 4, run: (b) => {
         b.cast(1.2);
         sfx("roar", 0.6);
-        for (const x of [80, 240]) {
+        for (const x of [VX(80), VX(240)]) {
           fx("spawn/summon-rise", x, 156, {}, { layer: "world" });
           b.later(2.0, () => summon(makeEnemy(chance(0.5) ? "skeleton" : "cultist", x, 156, 2), "rise"));
         }
@@ -124,9 +128,9 @@ const BOSSES = {
       } },
       wave: { w: 2, run: (b) => {
         b.cast(0.9);
-        const dir = P().x > 160 ? 1 : -1;
+        const c = VX(160), dir = P().x > c ? 1 : -1;
         for (let k = 0; k < 4; k++) {
-          const x = 160 - dir * 120 + dir * k * 80;
+          const x = c - dir * 120 + dir * k * 80;
           b.later(0.2 + k * 0.35, () => tele(x, 148, 48, 0.8, () => { fx("water/wave-crash", x, 148, {}, { flip: dir < 0 }); sfx("water", 1); G.world.after(0.9, () => blast(x, 148, 50, 2, { elem: "water", kb: 260 * dir, ry: 26 })); }, "#36a2e0"));
         }
         return 3.0;
@@ -162,7 +166,7 @@ const BOSSES = {
       } },
       frogs: { w: 1, phase: 1, when: () => G.world.enemies().length < 4, run: (b) => {
         b.cast(1);
-        for (const x of [90, 230]) { fx("spawn/egg-hatch", x, 150, { palette: PAL.poison }); b.later(1.6, () => summon(makeEnemy("frog", x, 150, 3), "splash")); }
+        for (const x of [VX(90), VX(230)]) { fx("spawn/egg-hatch", x, 150, { palette: PAL.poison }); b.later(1.6, () => summon(makeEnemy("frog", x, 150, 3), "splash")); }
         return 2;
       } },
     },
@@ -194,7 +198,7 @@ const BOSSES = {
         b.cast(1.0);
         const n = b.phase > 0 ? 8 : 5;
         for (let i = 0; i < n; i++) b.later(i * 0.22, () => {
-          const p = P(), x = i % 2 ? p.x : rnd(30, 290), y = i % 2 ? p.y : rnd(FLOOR_TOP + 8, FLOOR_BOT - 4);
+          const p = P(), x = i % 2 ? p.x : VX(rnd(30, 290)), y = i % 2 ? p.y : rnd(FLOOR_TOP + 8, FLOOR_BOT - 4);
           tele(x, y, 18, 0.95, () => { sfx("shatter", 0.6); blast(x, y, 18, 2, { elem: "ice", status: ["freeze", 1] }); }, "#9bdcff");
           fx("ice/icicle-fall", x, y);
         });
@@ -307,7 +311,7 @@ const BOSSES = {
         b.shieldFx = fx("scifi/force-field", b.x, b.y, { radius: 48 }, { follow: b });
         b.shielded = true;
         sfx("laser", 1, 0.4);
-        b.cores = [70, 250].map((x) => {
+        b.cores = [clampX(b.x - 120), clampX(b.x + 120)].map((x) => {
           const c = summon(makeEnemy("drone", x, 150, 4), "warp");
           c.coreFor = b;
           return c;
@@ -341,7 +345,7 @@ const BOSSES = {
         b.cast(1.2);
         const lane = rnd(0, 1) < 0.5;
         for (let k = 0; k < 5; k++) {
-          const x = 40 + k * 60 + (lane ? 30 : 0), y = rnd(FLOOR_TOP + 10, FLOOR_BOT - 6);
+          const x = VX(40 + k * 60 + (lane ? 30 : 0)), y = rnd(FLOOR_TOP + 10, FLOOR_BOT - 6);
           tele(x, y, 24, 1.0, () => { fx("holy/holy-pillar", x, y, { shafts: 4 }); sfx("holy", 0.5); G.world.after(0.62, () => blast(x, y, 24, 2, { elem: "holy", kz: 120 })); }, "#ffd84a");
         }
         return 2.2;
@@ -404,7 +408,7 @@ const BOSSES = {
       eclipse: { w: 8, phase: 2, once: true, run: (b) => {
         b.cast(2.2);
         G.screen.flash = 0.6;
-        G.world.spawnFx("shadow/eclipse", 160, 40, {}, { layer: "floor", prio: 2 });
+        G.world.spawnFx("shadow/eclipse", viewX(160), 40, {}, { layer: "floor", prio: 2 });
         fx("arcane/time-stop", P().x, P().y, {}, { layer: "over" });
         applyStatus(P(), "slow", 3);
         sfx("dark", 1.4, 0.5);
@@ -486,8 +490,8 @@ class Boss extends Vessel {
       this.phase++;
       this.enraged = true;
       applyStatus(this, "rage", 9999);
-      G.world.spawnFx("ui/health-bar-hit", 160, 150, { from: this.phases[this.phase - 1] + 0.1, to: this.phases[this.phase - 1] }, { layer: "over", prio: 2 });
-      G.world.spawnFx("impacts/impact-frame", 160, 90, {}, { layer: "over", prio: 2 });
+      G.world.spawnFx("ui/health-bar-hit", viewX(160), 150, { from: this.phases[this.phase - 1] + 0.1, to: this.phases[this.phase - 1] }, { layer: "over", prio: 2 });
+      G.world.spawnFx("impacts/impact-frame", viewX(160), 90, {}, { layer: "over", prio: 2 });
       G.world.hitstop(0.25);
       sfx("roar", 0.8, 1.2);
       this.busy = 0.6;
@@ -548,7 +552,7 @@ class Boss extends Vessel {
     G.screen.flash = 0.8;
     G.screen.flashColor = [255, 255, 255];
     sfx("bigboom");
-    w.spawnFx("impacts/impact-frame", 160, 90, {}, { layer: "over", prio: 2 });
+    w.spawnFx("impacts/impact-frame", viewX(160), 90, {}, { layer: "over", prio: 2 });
     w.add(new Corpse(this, this.def.death, this.def.deathOpts, { fadeBody: this.def.death === "holy/resurrection" ? 2.5 : 0 }));
     w.spawnFx(this.kind === "seraph" ? "explosions/nuke" : "explosions/big-explosion", this.x, this.y, {}, { prio: 2 });
     this.gone = true;

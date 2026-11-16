@@ -41,6 +41,9 @@ export class Screen {
     this.text = { w: W * TK, h: H * TK, color: new Uint32Array(W * TK * H * TK) };
     this.top = createFrame(W, H);
     this.bg = new Uint32Array(W * H).fill(0xff100c14);
+    // the room's backdrop, as wide as the room: the world copies the part each view shows into bg every frame
+    this.bgW = W;
+    this.bgSrc = new Uint32Array(W * H).fill(0xff100c14);
     this.shake = [0, 0];
     this.flash = 0;
     this.flashColor = [255, 255, 255];
@@ -48,6 +51,13 @@ export class Screen {
     this.pixelPerfect = true;
     this.fit();
     addEventListener("resize", () => this.fit());
+  }
+  /** A fresh room-wide backdrop to paint into (w pixels wide, the screen's height). */
+  backdrop(w = W) {
+    if (this.bgW !== w || !this.bgSrc) this.bgSrc = new Uint32Array(w * H);
+    this.bgW = w;
+    this.bgSrc.fill(0xff100c14);
+    return this.bgSrc;
   }
   fit() {
     const k = Math.min(innerWidth / W, innerHeight / H);

@@ -17,6 +17,12 @@ const nav = () => {
   return { up: I.take("mup"), down: I.take("mdown"), left: I.take("mleft"), right: I.take("mright"), ok: I.take("confirm"), back: I.take("back") || I.take("pause"), alt: I.take("interact") };
 };
 const persist = () => G.persist?.();
+/** Menu controls from one co-op player's own device (attack takes, interact rerolls). */
+const navOf = (p) => {
+  if (!p?.device) return nav();
+  const c = p.ctrl;
+  return { up: c.take("mup") || c.take("up"), down: c.take("mdown") || c.take("down"), left: c.take("mleft") || c.take("left"), right: c.take("mright") || c.take("right"), ok: c.take("attack"), back: false, alt: c.take("interact") };
+};
 
 /** A vertical list menu. items: [{ label, act, value?() , left?(), right?() }] */
 const RARITY_NAME = { common: "COMMON", rare: "RARE", epic: "EPIC", legendary: "LEGENDARY" };
@@ -54,8 +60,13 @@ export class ListMenu {
   }
 }
 
-/** Three boon cards; pick one. */
+/**
+ * Three boon cards; pick one. o.build: whose boons these become (their rerolls); o.player: in co-op, the player who
+ * picks, with their own device, under their own colour.
+ */
 export class BoonPick {
+  /** The cards need the top of the screen: the HUD steps aside while they're up. */
+  hideHud = true;
   constructor(choices, onPick, o = {}) {
     this.choices = choices;
     this.onPick = onPick;
@@ -63,16 +74,21 @@ export class BoonPick {
     this.t = 0;
     this.reroll = o.reroll;
     this.title = o.title ?? "CHOOSE A BOON";
+    this.build = o.build ?? null;
+    this.player = o.player ?? null;
     sfx("powerup", 0.6, 0.8);
+  }
+  get rerolls() {
+    return this.build?.rerolls ?? 0;
   }
   update(dt) {
     this.t += dt;
     if (this.t < 0.35) return true;
-    const n = nav();
+    const n = navOf(this.player);
     if (n.left) (this.i = (this.i + this.choices.length - 1) % this.choices.length), sfx("ui");
     if (n.right) (this.i = (this.i + 1) % this.choices.length), sfx("ui");
-    if (n.alt && this.reroll && G.run.rerolls > 0) {
-      G.run.rerolls--;
+    if (n.alt && this.reroll && this.rerolls > 0) {
+      this.build.rerolls--;
       this.choices = this.reroll();
       sfx("magic");
       this.t = 0.2;
@@ -90,7 +106,12 @@ export class BoonPick {
   }
   draw() {
     const n = this.choices.length, cw = 94, gap = 8, x0 = 160 - (n * cw + (n - 1) * gap) / 2, k = Math.min(1, this.t * 4);
-    text(this.title, 160, 12, C.gold, { align: "center", font: "big" });
+    const who = this.player;
+    if (who) {
+      // co-op: whose pick this is, in their colour, with what they already hold
+      text(`P${who.slot + 1} - ${L(this.title)}`, 160, 12, who.color, { align: "center", font: "big" });
+      painterFor(G.screen.hud).rect(110, 23, 100, 1, who.color);
+    } else text(this.title, 160, 12, C.gold, { align: "center", font: "big" });
     if (!n) return text("NOTHING LEFT TO GIVE. PRESS ANY KEY.", 160, 90, C.text, { align: "center" });
     this.choices.forEach((b, i) => {
       const sel = i === this.i, x = Math.round(x0 + i * (cw + gap)), y = Math.round(30 + (1 - k) * 40 - (sel ? 3 : 0)), pal = ELEM_PAL[b.elem] ?? PAL.metal;
@@ -103,35 +124,72 @@ export class BoonPick {
       text(ELEM_NAME[b.elem] ?? "", x + cw / 2, y + 4, hex(pal[Math.floor(pal.length * 0.7)]) >>> 0, { align: "center" });
       para(b.desc, x + 5, y + 60 + nl.length * 7, cw - 10, sel ? C.text : C.dim, { align: "center" });
     });
-    const hint = t("[ARROWS] CHOOSE   [ENTER] TAKE") + (this.reroll && G.run.rerolls > 0 ? "   " + t("[E] REROLL ({0})", G.run.rerolls) : "");
+    const hint = (who?.device ? t("P{0}: LEFT/RIGHT CHOOSE   ATTACK TAKE", who.slot + 1) : t("[ARROWS] CHOOSE   [ENTER] TAKE")) + (this.reroll && this.rerolls > 0 ? "   " + t("[E] REROLL ({0})", this.rerolls) : "");
     text(hint, 160, 166, C.dim, { align: "center" });
   }
 }
 
-/** Your boons, listed. */
+/**
+ * The legend of what everyone holds: each player's boons (LEFT/RIGHT switches player in co-op), UP/DOWN reads one,
+ * their numbers, and the camp's permanent upgrades below.
+ */
 export class BoonList {
   constructor(onBack) {
     this.onBack = onBack;
+    this.p = 0;
+    this.i = 0;
+  }
+  get players() {
+    return G.run?.players ?? [];
   }
   update() {
-    const n = nav();
+    const n = nav(), P = this.players, bd = P[this.p]?.bd, cnt = bd?.boons.length ?? 0;
+    if (P.length > 1 && n.left) (this.p = (this.p + P.length - 1) % P.length), (this.i = 0), sfx("ui");
+    if (P.length > 1 && n.right) (this.p = (this.p + 1) % P.length), (this.i = 0), sfx("ui");
+    if (cnt && n.up) (this.i = (this.i + cnt - 1) % cnt), sfx("ui");
+    if (cnt && n.down) (this.i = (this.i + 1) % cnt), sfx("ui");
     if (n.back || n.ok) this.onBack();
     return true;
   }
   draw() {
-    const run = G.run;
-    panel(20, 14, 280, 152, { glow: C.ember });
-    text("BOONS", 160, 20, C.gold, { align: "center", font: "big" });
-    if (!run.boons.length) text("NONE YET", 160, 80, C.dim, { align: "center" });
-    run.boons.forEach((b, i) => {
-      const col = i % 2, row = Math.floor(i / 2), x = 28 + col * 138, y = 34 + row * 13;
-      if (y > 156) return;
-      const pal = ELEM_PAL[b.elem] ?? PAL.metal;
-      text(b.name, x, y, hex(RARITY_COLOR[b.rarity]) >>> 0);
-      text(ELEM_NAME[b.elem], x, y + 6, hex(pal[5]) >>> 0, { outline: false });
+    const P = this.players, pl = P[this.p], hp = painterFor(G.screen.hud);
+    panel(14, 10, 292, 160, { glow: pl && P.length > 1 ? pl.color : C.ember });
+    text("BOONS", 160, 15, C.gold, { align: "center", font: "big" });
+    if (!pl) return;
+    const bd = pl.bd, list = bd.boons;
+    // the tabs: one per player, theirs lit
+    if (P.length > 1) {
+      P.forEach((q, k) => {
+        const x = 160 + (k - (P.length - 1) / 2) * 70, sel = k === this.p, s = `P${q.slot + 1} ${L(q.cls.name)}`;
+        if (sel) hp.rect(x - 32, 33, 64, 1, q.color);
+        text(s, x, 26, sel ? q.color : C.dark, { align: "center", max: 66 });
+      });
+      text("< >", 300, 26, C.dim, { align: "right" });
+    } else text(`${L(pl.cls.name)} - ${L(pl.cls.title)}`, 160, 26, C.dim, { align: "center" });
+    if (!list.length) text("NONE YET", 160, 70, C.dim, { align: "center" });
+    this.i = Math.min(this.i, Math.max(0, list.length - 1));
+    list.forEach((b, i) => {
+      const col = i % 2, row = Math.floor(i / 2), x = 26 + col * 140, y = 38 + row * 9, sel = i === this.i;
+      if (y > 112) return;
+      const pal = ELEM_PAL[b.elem] ?? PAL.metal, ec = hex(pal[Math.floor(pal.length * 0.65)]) >>> 0;
+      if (sel) hp.rect(x - 7, y - 1, 136, 8, hex("#2a2040") >>> 0);
+      // the same pip the HUD shows, so the two read together
+      hp.px(x - 4, y + 1, ec); hp.px(x - 5, y + 2, ec); hp.px(x - 4, y + 2, hex(pal[pal.length - 1]) >>> 0); hp.px(x - 3, y + 2, ec); hp.px(x - 4, y + 3, ec);
+      text(b.name, x, y, sel ? C.white : hex(RARITY_COLOR[b.rarity]) >>> 0, { max: 92 });
+      text(ELEM_NAME[b.elem], x + 132, y, ec, { align: "right", outline: false, max: 38 });
     });
-    const s = run.stats;
-    text(t("DMG {0}%  CRIT {1}%  SPEED {2}%", Math.round(s.dmg * 100), Math.round(s.crit * 100), Math.round(s.speed * 100)), 160, 158, C.dim, { align: "center" });
+    const cur = list[this.i];
+    if (cur) {
+      hp.rect(22, 118, 276, 1, C.edge);
+      text(`${L(cur.name)} - ${L(RARITY_NAME[cur.rarity])}`, 26, 121, hex(RARITY_COLOR[cur.rarity]) >>> 0, { max: 268 });
+      para(cur.desc, 26, 129, 268, C.text);
+    }
+    const s = bd.stats;
+    text(t("DMG {0}%  CRIT {1}%  SPEED {2}%", Math.round(s.dmg * 100), Math.round(s.crit * 100), Math.round(s.speed * 100)), 160, 145, C.blue, { align: "center" });
+    // the camp's upgrades, which every climb carries
+    const ups = UPGRADES.filter((u) => (G.save.upgrades[u.id] ?? 0) > 0).map((u) => `${L(u.name)} ${G.save.upgrades[u.id]}`);
+    text(ups.length ? t("CAMP: {0}", ups.join("  ")) : t("CAMP: NO UPGRADES YET"), 160, 153, C.dim, { align: "center", max: 284 });
+    text(P.length > 1 ? "LEFT/RIGHT: PLAYER   UP/DOWN: READ   ESC: BACK" : "UP/DOWN: READ   ESC: BACK", 160, 162, C.dark, { align: "center", max: 284 });
   }
 }
 
@@ -208,21 +266,12 @@ export class ClassAltar {
     if (prev !== this.i) (sfx("ui"), this.onChange(CLASS_ORDER[this.i], true));
     const id = CLASS_ORDER[this.i], cls = CLASSES[id];
     if (n.ok) {
-      if (S.unlocked[id]) {
-        S.lastClass = id;
-        persist();
-        sfx("ok");
-        this.onChange(id, false);
-        this.onBack();
-      } else if (S.embers >= cls.cost) {
-        S.embers -= cls.cost;
-        S.unlocked[id] = true;
-        S.lastClass = id;
-        persist();
-        sfx("powerup");
-        G.hud.toast("VESSEL AWAKENED", cls.name, PAL.fire);
-        this.onChange(id, false);
-      } else sfx("nope");
+      // every vessel is free to choose
+      S.lastClass = id;
+      persist();
+      sfx("ok");
+      this.onChange(id, false);
+      this.onBack();
     }
     if (n.back) {
       this.onChange(S.lastClass, false);
@@ -231,7 +280,7 @@ export class ClassAltar {
     return true;
   }
   draw() {
-    const id = CLASS_ORDER[this.i], cls = CLASSES[id], S = G.save, own = S.unlocked[id];
+    const id = CLASS_ORDER[this.i], cls = CLASSES[id], S = G.save;
     panel(150, 18, 160, 132, { glow: C.ember });
     text("< " + L(cls.name) + " >", 230, 25, C.gold, { align: "center", font: "big" });
     text(cls.title, 230, 36, C.dim, { align: "center" });
@@ -239,9 +288,8 @@ export class ClassAltar {
     text(t("HEARTS {0}   SPEED {1}", cls.hp / 2, cls.speed), 158, 88, C.blue);
     text(t("SPECIAL: {0}", cls.special.name), 158, 96, C.text);
     text(t("ULTIMATE: {0}", cls.ult.name), 158, 104, C.text);
-    if (own) text(S.lastClass === id ? "CHOSEN" : "[ENTER] CHOOSE", 230, 132, S.lastClass === id ? C.green : C.white, { align: "center" });
-    else text(t("[ENTER] AWAKEN FOR {0} EMBERS", cls.cost), 230, 132, S.embers >= cls.cost ? C.ember : C.red, { align: "center" });
-    CLASS_ORDER.forEach((c, k) => painterFor(G.screen.hud).rect(200 + k * 10, 142, 6, 2, k === this.i ? C.white : S.unlocked[c] ? C.ember : C.dark));
+    text(S.lastClass === id ? "CHOSEN" : "[ENTER] CHOOSE", 230, 132, S.lastClass === id ? C.green : C.white, { align: "center" });
+    CLASS_ORDER.forEach((c, k) => painterFor(G.screen.hud).rect(200 + k * 10, 142, 6, 2, k === this.i ? C.white : C.ember));
   }
 }
 
@@ -415,17 +463,7 @@ export class PartyMenu {
         continue;
       }
       if (c.take("attack")) {
-        const cls = CLASSES[s.cls];
-        if (!S.unlocked[s.cls]) {
-          if (S.embers >= cls.cost) {
-            S.embers -= cls.cost;
-            S.unlocked[s.cls] = true;
-            persist();
-            sfx("powerup");
-            G.hud.toast("VESSEL AWAKENED", cls.name, PAL.fire);
-            this.onChange();
-          } else sfx("nope");
-        } else if (i === 0) return this.close(), false;
+        if (i === 0) return this.close(), false;
         else (s.ready = !s.ready), sfx("ok");
       }
     }
@@ -448,17 +486,16 @@ export class PartyMenu {
         para("PAD: A   KEYS: [.] OR NUM 1 (ARROWS MOVE)", x + 4, 104, 65, C.dark, { align: "center" });
         continue;
       }
-      const cls = CLASSES[s.cls], own = S.unlocked[s.cls];
-      text("< " + L(cls.name) + " >", x + 36, 52, own ? C.white : C.dark, { align: "center", max: 70 });
+      const cls = CLASSES[s.cls];
+      text("< " + L(cls.name) + " >", x + 36, 52, C.white, { align: "center", max: 70 });
       text(cls.title, x + 36, 59, C.dim, { align: "center", max: 70 });
       text(t("HEARTS {0}  SPD {1}", cls.hp / 2, cls.speed), x + 36, 68, C.blue, { align: "center", max: 70 });
       text(cls.special.name, x + 36, 76, C.text, { align: "center", max: 70 });
       text(cls.ult.name, x + 36, 83, C.ember, { align: "center", max: 70 });
-      if (!own) text(t("AWAKEN: {0} EMBERS", cls.cost), x + 36, 96, S.embers >= cls.cost ? C.gold : C.red, { align: "center", max: 70 });
-      else if (i > 0) text(s.ready ? "READY" : "", x + 36, 96, C.green, { align: "center" });
+      if (i > 0) text(s.ready ? "READY" : "", x + 36, 96, C.green, { align: "center" });
       text(DEVICE_LABEL[s.device] ?? "ANY DEVICE", x + 36, 132, C.dark, { align: "center", max: 70 });
       text(i === 0 ? "ATTACK: DONE" : "SPECIAL: LEAVE", x + 36, 140, C.dim, { align: "center", max: 70 });
     }
-    text("LEFT/RIGHT: CHANGE VESSEL   ATTACK ON A SLEEPING VESSEL: AWAKEN IT   ESC: DONE", 160, 156, C.dim, { align: "center", max: 312 });
+    text("LEFT/RIGHT: CHANGE VESSEL   ESC: DONE", 160, 156, C.dim, { align: "center", max: 312 });
   }
 }

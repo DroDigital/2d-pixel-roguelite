@@ -1,14 +1,14 @@
 // You: a vessel driven by the controls. Combos chain when the last swing can be cancelled, dashes dodge through hits
 // (and a dash timed just before a blow is a parry), the ultimate fills as you fight.
 
-import { vesselPal, dashPose, kneelPose, castPose } from "../engine/body.js";
+import { vesselPal, dashPose, kneelPose, castPose, drawBody } from "../engine/body.js";
 import { posed } from "../engine/pfx.js";
 import { Vessel } from "./entity.js";
 import { G, sfx, clampX, clampY } from "./ctx.js";
 import { resolveMoveHit } from "./skills.js";
 import { applyStatus, aoe, damage, inRadius } from "./combat.js";
 import { hex, PAL, painterFor } from "../engine/pfx.js";
-import { RAISE_COST, RAISE_MIN } from "./run.js";
+import { RAISE_COST, RAISE_MIN, buildOf } from "./run.js";
 import { t } from "./i18n.js";
 import { text } from "./ui.js";
 
@@ -48,6 +48,10 @@ export class Player extends Vessel {
   }
   get run() {
     return G.run;
+  }
+  /** This player's own boons, stats and hooks. */
+  get bd() {
+    return buildOf(this);
   }
   get ctrl() {
     return this.device ? G.input.device(this.device) : G.input;
@@ -113,7 +117,7 @@ export class Player extends Vessel {
     }
     if (inp.take("attack", 0.12)) return this.attack();
     if (inp.take("interact", 0.1) && this.interactable) return this.interactable.interact(this);
-    const [ax, ay] = inp.axis, sp = this.cls.speed * run.stats.speed * this.speedK;
+    const [ax, ay] = inp.axis, sp = this.cls.speed * this.bd.stats.speed * this.speedK;
     if (Math.hypot(ax, ay) > 0.15) {
       this.x = clampX(this.x + ax * sp * dt);
       this.y = clampY(this.y + ay * sp * 0.62 * dt);
@@ -144,20 +148,20 @@ export class Player extends Vessel {
     this.autoAim();
     const m = cls.combo[i];
     m.comboStep = i;
-    this.perform(m, { speed: this.run.stats.atkSpeed });
+    this.perform(m, { speed: this.bd.stats.atkSpeed });
     if (m.sfx) sfx(m.sfx);
     this.combo = i + 1;
     if (this.combo >= cls.combo.length) this.combo = 0;
     this.comboT = 0.9;
-    for (const f of this.run.hooks.onAttack) f(this, i);
+    for (const f of this.bd.hooks.onAttack) f(this, i);
   }
   special() {
     const s = this.cls.special;
     this.autoAim(160);
-    this.perform(s.move, { speed: this.run.stats.atkSpeed });
-    this.cd.special = s.cd * this.run.stats.cdr;
+    this.perform(s.move, { speed: this.bd.stats.atkSpeed });
+    this.cd.special = s.cd * this.bd.stats.cdr;
     this.combo = 0;
-    for (const f of this.run.hooks.onSpecial) f(this);
+    for (const f of this.bd.hooks.onSpecial) f(this);
   }
   ultimate() {
     const u = this.cls.ult;
@@ -168,7 +172,7 @@ export class Player extends Vessel {
     G.world.spawnFx("lightning/charge-up", this.x, this.y, { actor: this.snapshot() }, { follow: this, life: 0.7, prio: 1 });
     G.screen.flash = 0.25;
     sfx("powerup", 0.8, 0.8);
-    for (const f of this.run.hooks.onUlt) f(this);
+    for (const f of this.bd.hooks.onUlt) f(this);
   }
   startDash() {
     const inp = this.ctrl, [ax, ay] = inp.axis, run = this.run;
@@ -180,7 +184,7 @@ export class Player extends Vessel {
     const l = Math.hypot(dx, dy);
     this.dashDir = [dx / l, dy / l];
     if (Math.abs(dx) > 0.2) this.facing = Math.sign(dx);
-    this.cd.dash = 0.42 * run.stats.dashCd;
+    this.cd.dash = 0.42 * this.bd.stats.dashCd;
     this.lastDash = G.world.t;
     this.combo = 0;
     const kind = this.cls.dash.kind;
@@ -189,13 +193,13 @@ export class Player extends Vessel {
       // the pyromancer steps through space instead
       const w = G.world;
       w.spawnFx("arcane/blink-out", this.x, this.y, { actor: this.snapshot() }, { flip: this.facing < 0, prio: 1 });
-      const dist = 78 * run.stats.dashLen;
+      const dist = 78 * this.bd.stats.dashLen;
       this.x = clampX(this.x + this.dashDir[0] * dist);
       this.y = clampY(this.y + this.dashDir[1] * dist * 0.5);
       w.spawnFx("arcane/blink-in", this.x, this.y, { actor: this.snapshot() }, { flip: this.facing < 0, prio: 1 });
       this.iframe = Math.max(this.iframe, 0.3);
       this.dashT = -1;
-      for (const f of run.hooks.onDash) f(this);
+      for (const f of this.bd.hooks.onDash) f(this);
       sfx("magic", 0.6, 1.4);
       return;
     }
@@ -203,10 +207,10 @@ export class Player extends Vessel {
     if (kind === "roll" && this.cls.id === "ranger") G.world.spawnFx("nature/leaf-storm", this.x, this.y, { actor: this.snapshot() }, { follow: this, life: 0.5, prio: 0 });
     if (kind === "shadow") G.world.spawnFx("explosions/smoke-bomb", this.x, this.y, { palette: ["#0e0c12", "#1c1230", "#2c1a4a", "#432468", "#5e3290", "#8048b8"] }, { prio: 0, speed: 1.6, life: 1 });
     else G.world.spawnFx("spawn/poof", this.x - this.dashDir[0] * 6, this.y, {}, { prio: 0 });
-    for (const f of run.hooks.onDash) f(this);
+    for (const f of this.bd.hooks.onDash) f(this);
   }
   updateDash(dt) {
-    const run = this.run, D = 0.2, sp = 250 * run.stats.dashLen;
+    const run = this.run, D = 0.2, sp = 250 * this.bd.stats.dashLen;
     this.dashT += dt;
     this.x = clampX(this.x + this.dashDir[0] * sp * dt);
     this.y = clampY(this.y + this.dashDir[1] * sp * 0.6 * dt);
@@ -222,7 +226,7 @@ export class Player extends Vessel {
     if (this.dashT >= D) {
       this.dashT = -1;
       this.iframe = Math.max(this.iframe, 0.06);
-      for (const f of run.hooks.onDashEnd) f(this);
+      for (const f of this.bd.hooks.onDashEnd) f(this);
     }
   }
   trail(dt) {
@@ -244,7 +248,7 @@ export class Player extends Vessel {
     // after-images are light, not paint: they glow over what's behind and leave nothing muddy
     const L = frame.light, W = frame.w, H = frame.h, c = this.ghostC;
     for (const g of this.ghosts) {
-      const r = posed(g.pose), k = 0.55 * (1 - g.age / 0.2), X = Math.round(g.x), Y = Math.round(g.y);
+      const r = posed(g.pose), k = 0.55 * (1 - g.age / 0.2), X = Math.round(g.x) - (frame.ox | 0), Y = Math.round(g.y) - (frame.oy | 0);
       if (k <= 0) continue;
       const cr = (c & 255) * k, cg = ((c >>> 8) & 255) * k, cb = ((c >>> 16) & 255) * k;
       for (let i = 0; i < r.n; i++) {
@@ -254,6 +258,58 @@ export class Player extends Vessel {
         L[j] = (255 << 24) | (Math.min(255, ((d >>> 16) & 255) + cb) << 16) | (Math.min(255, ((d >>> 8) & 255) + cg) << 8) | Math.min(255, (d & 255) + cr);
       }
     }
+  }
+  /**
+   * After everything (effects, the "over" layer, weather) is drawn: if most of this player was covered or washed out
+   * by light, paint them again on top, crisp, with a dark rim and a glow in their colour, so you never lose yourself
+   * in a fight. The rim eases in and out instead of blinking.
+   */
+  drawOnTop(frame) {
+    const pose = this.pose;
+    if (!pose || (this.dead && !this.down)) return;
+    const r = posed(pose), map = this.pal.map, flip = this.facing < 0, C = frame.color, L = frame.light, W = frame.w, H = frame.h;
+    const X = Math.round(this.x) - (frame.ox | 0), Y = Math.round(this.y - this.z) - (frame.oy | 0);
+    let covered = 0, seen = 0;
+    for (let i = 0; i < r.n; i += 2) {
+      const x = flip ? X - r.xs[i] - 1 : X + r.xs[i], y = Y + r.ys[i];
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const j = y * W + x, l = L[j], lit = (l & 255) + ((l >>> 8) & 255) + ((l >>> 16) & 255);
+      seen++;
+      if (C[j] !== (map.get(r.color[i]) ?? r.color[i]) || lit > 260) covered++;
+    }
+    if (!seen) return;
+    const want = covered / seen > 0.22 ? 1 : 0;
+    this.occl = (this.occl ?? 0) + (want - (this.occl ?? 0)) * (want ? 0.35 : 0.08);
+    if (this.occl < 0.04) return;
+    const blink = this.inv > 0 && Math.floor(this.inv * 20) & 1;
+    drawBody(frame, pose, this.pal, this.x, this.y - this.z, { flip, clearLight: true, flash: this.flash > 0 ? 0.85 : 0, alpha: blink ? 0.45 : 1 });
+    // the rim: dark right against the body, the player's colour (light) just outside it
+    const x0 = r.x0 - 2, y0 = r.y0 - 2, w = r.x1 - r.x0 + 5, h = r.y1 - r.y0 + 5, m = (this._mask ??= { a: new Uint8Array(0) });
+    if (m.a.length < w * h) m.a = new Uint8Array(w * h);
+    const M = m.a;
+    M.fill(0, 0, w * h);
+    for (let i = 0; i < r.n; i++) M[(r.ys[i] - y0) * w + (r.xs[i] - x0)] = 1;
+    const ink = 0xff0b0a10, col = this.device ? this.color : this.ghostC, k = this.occl;
+    const cr = (col & 255) * 0.55 * k, cg = ((col >>> 8) & 255) * 0.55 * k, cb = ((col >>> 16) & 255) * 0.55 * k;
+    for (let my = 0; my < h; my++)
+      for (let mx = 0; mx < w; mx++) {
+        if (M[my * w + mx]) continue;
+        let ring = 0;
+        for (let d = 1; d <= 2 && !ring; d++)
+          if ((mx >= d && M[my * w + mx - d]) || (mx + d < w && M[my * w + mx + d]) || (my >= d && M[(my - d) * w + mx]) || (my + d < h && M[(my + d) * w + mx])) ring = d;
+        if (!ring) continue;
+        const lx = mx + x0, x = flip ? X - lx - 1 : X + lx, y = Y + my + y0;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const j = y * W + x, l = L[j];
+        if (ring === 1) {
+          if (k > 0.5 || (x + y) & 1) C[j] = ink;
+          L[j] = 0;
+        } else {
+          // the outer ring: what's there dims, and the player's colour glows in it
+          const dim = 1 - 0.6 * k;
+          L[j] = (0xff000000 | (Math.min(255, ((l >>> 16) & 255) * dim + cb) << 16) | (Math.min(255, ((l >>> 8) & 255) * dim + cg) << 8) | Math.min(255, (l & 255) * dim + cr)) >>> 0;
+        }
+      }
   }
   onMoveHit(h, perf) {
     return resolveMoveHit(this, h, perf);
@@ -271,7 +327,7 @@ export class Player extends Vessel {
         sfx("parry");
         this.ult = Math.min(100, this.ult + 12);
         run.stat("parries");
-        for (const f of run.hooks.onParry) f(this, info);
+        for (const f of this.bd.hooks.onParry) f(this, info);
       }
       return false;
     }
@@ -282,10 +338,10 @@ export class Player extends Vessel {
       w.spawnFx("impacts/shield-block", this.x, this.y, {}, { flip: this.facing < 0, prio: 2 });
       sfx("block");
       this.iframe = 0.8;
-      for (const f of run.hooks.onBlock) f(this, info);
+      for (const f of this.bd.hooks.onBlock) f(this, info);
       return false;
     }
-    let n = Math.max(1, Math.round(amt * (this.cls.armor ?? 1) * run.stats.dmgTaken));
+    let n = Math.max(1, Math.round(amt * (this.cls.armor ?? 1) * this.bd.stats.dmgTaken));
     if (amt <= 0) return false;
     this.hp -= n;
     run.damageTaken += n;
@@ -309,7 +365,7 @@ export class Player extends Vessel {
       const [s, d, p = 1] = info.status;
       if (Math.random() < p * 0.6) applyStatus(this, s, d * 0.5, 1, info.src);
     }
-    for (const f of run.hooks.onHurt) f(this, info);
+    for (const f of this.bd.hooks.onHurt) f(this, info);
     if (this.hp <= 0) run.playerDown(this);
     return true;
   }

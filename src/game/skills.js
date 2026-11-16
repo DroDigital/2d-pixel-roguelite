@@ -1,6 +1,6 @@
 // Small helpers moves use: play an effect at a point of the move, fire a projectile from the hand, find a target.
 
-import { G } from "./ctx.js";
+import { G, X_MIN, X_MAX } from "./ctx.js";
 import { Projectile } from "./entity.js";
 
 /** Spawn an effect at a point in the move's local space (mirrored with its facing). */
@@ -14,7 +14,7 @@ export function aimPoint(a, range = 160, fall = 90, anyDir = false) {
   const w = G.world;
   const t = w.nearest(a.x, a.y, a.team, range, (e) => anyDir || (e.x - a.x) * a.facing > -10);
   if (t) return { x: t.x, y: t.y, e: t };
-  return { x: Math.max(20, Math.min(300, a.x + a.facing * fall)), y: a.y, e: null };
+  return { x: Math.max(X_MIN + 6, Math.min(X_MAX - 6, a.x + a.facing * fall)), y: a.y, e: null };
 }
 
 /**

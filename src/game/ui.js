@@ -27,7 +27,16 @@ export function text(str, x, y, c = C.text, o = {}) {
     while (chars.length > 1 && measure(chars.join("") + "..", font, k) > o.max) chars.pop();
     s = chars.join("").trimEnd() + "..";
   }
-  const world = o.frame && o.frame === G.screen.frame;
+  // words over the world are placed in room pixels: through the view being drawn they land on the screen (and stay
+  // inside a split view's own part of it)
+  const v = o.frame ? G.view : null;
+  if (v) {
+    x += v.sx - v.ox;
+    y += v.sy - v.oy;
+    const m = v.w < 320 ? -6 : 60;
+    if (x < v.sx - m || x > v.sx + v.w + m || y < v.sy - 2 || y > v.sy + v.h - 4) return;
+  }
+  const world = !!v;
   drawText(s, x, y, c, { font, scale: k, align: o.align ?? "left", a: o.a ?? 1, shadow: o.shadow, outline: o.outline === false ? null : (o.outline ?? INK), dim: world ? G.screen.dim : 0 });
 }
 export const width = (str, font = "mini", scale = 1) => measure(String(L(str)).toUpperCase(), font, scale);

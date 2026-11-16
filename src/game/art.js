@@ -4,7 +4,15 @@
 import { hex, fbm, noise, rand, mix, scale } from "../engine/pfx.js";
 import { FLOOR_TOP } from "./ctx.js";
 
-const W = 320, H = 180;
+// a room's backdrop is as wide as the room (set by each painting from its buffer); the screen is 180 tall
+let W = 320;
+const H = 180;
+/** n points evenly along the width, `step` apart, centred, at least `margin` from either end. */
+export function spread(w, step, margin = 28) {
+  const n = Math.max(1, Math.floor((w - 2 * margin) / step) + 1), x0 = (w - (n - 1) * step) / 2;
+  return Array.from({ length: n }, (_, i) => Math.round(x0 + i * step));
+}
+const mids = (xs) => xs.slice(1).map((x, i) => Math.round((x + xs[i]) / 2));
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 const bay = (x, y) => BAYER[((y & 3) << 2) | (x & 3)];
 const R = (list) => list.map((c) => hex(c) >>> 0);
@@ -14,6 +22,7 @@ const step = (ramp, t, x, y) => ramp[Math.max(0, Math.min(ramp.length - 1, Math.
 class Paint {
   constructor(buf) {
     this.b = buf;
+    W = Math.round(buf.length / H);
   }
   px(x, y, c) {
     x |= 0;
@@ -208,7 +217,7 @@ function banner(P, x, top, h, pal, emblem) {
 
 // ---- floors: tiles in perspective toward a vanishing point
 function floor(P, pal, o = {}) {
-  const C = R(pal), y0 = FLOOR_TOP, seed = o.seed ?? 11, vx = 160, vy = -260;
+  const C = R(pal), y0 = FLOOR_TOP, seed = o.seed ?? 11, vx = W / 2, vy = -260;
   for (let y = y0; y < H; y++) {
     const z = (y - vy) / (y0 - vy); // 1 at the wall, bigger toward us
     const row = Math.floor(Math.log(z) * (o.rows ?? 9));
@@ -238,7 +247,9 @@ function floor(P, pal, o = {}) {
 function vignette(P, k = 0.5) {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const dx = (x - 160) / 180, dy = (y - 100) / 120, d = dx * dx + dy * dy;
+      // the room's ends darken as the screen's edges did; along a wide room only top and bottom do
+      const sx = x < 160 ? x : x > W - 160 ? x - (W - 320) : 160;
+      const dx = (sx - 160) / 180, dy = (y - 100) / 120, d = dx * dx + dy * dy;
       if (d > 0.45) P.b[y * W + x] = scale(P.b[y * W + x], 1 - Math.min(0.7, (d - 0.45) * k)) >>> 0;
     }
 }
@@ -246,14 +257,103 @@ function topShade(P, h = 30, k = 0.55) {
   for (let y = 0; y < h; y++) P.tone(0, y, W, 1, 1 - k * (1 - y / h));
 }
 
+// ---- the camp
+/** Where everything stands in the camp, left to right along its path. */
+export const HUB = {
+  W: 864, stationY: FLOOR_TOP + 12, start: 320,
+  yard: [50, 132], party: 226, fire: 320, shrine: 476, codex: 612, portal: 772,
+  tents: [[262, 30, 24, "#5a2a2a"], [378, 38, 28, "#2a3a5a"], [424, 26, 20, "#4a3a22"]],
+  signs: [176, 404, 544, 690],
+  torches: [150, 290, 352, 544, 690],
+};
+/** The path's middle at x: it wanders a little on its way to the spire. */
+export const hubPathY = (x) => 146 + Math.sin(x * 0.017) * 7 + Math.sin(x * 0.047 + 1) * 3 - Math.max(0, (x - HUB.portal + 90) / 90) * 12;
+const pickOf = (list, r) => list[Math.floor(r * list.length) % list.length];
+function treeline(P, pal, base, seed, density) {
+  const C = R(pal);
+  for (let i = 0; i < W / 9; i++) {
+    const x = Math.floor(i * 9 + rand(i, seed) * 8);
+    if (rand(i, seed, 5) > density(x)) continue;
+    const h = 26 + rand(i, seed, 1) * 40, w = 7 + rand(i, seed, 2) * 8;
+    for (let y = 0; y < h; y++) {
+      const hw = w * (y / h) * (1 + 0.25 * Math.sin(y * 0.9 + i));
+      for (let dx = -hw; dx <= hw; dx++) P.px(x + dx, base - h + y, step(C, 0.2 + (dx < -hw * 0.3 ? 0.35 : 0) * (y > h * 0.3 ? 1 : 0), x + dx, base - h + y));
+    }
+    P.rect(x - 1, base - 3, 3, 4, C[0]);
+  }
+}
+function tent(P, cx, base, w, h, color) {
+  const c = hex(color) >>> 0, dark = scale(c, 0.55) >>> 0, lit = hex("#ffb45a") >>> 0;
+  for (let y = 0; y < h; y++) {
+    const hw = (w / 2) * (y / h);
+    for (let dx = -hw; dx <= hw; dx++) {
+      const x = Math.round(cx + dx), yy = base - h + y, stripe = Math.floor((dx + w) / 5) % 2;
+      P.px(x, yy, dx < 0 ? (stripe ? dark : scale(dark, 0.8) >>> 0) : stripe ? c : scale(c, 0.85) >>> 0);
+    }
+  }
+  // the flap is open and the lamp inside is lit
+  for (let y = Math.floor(h * 0.45); y < h; y++) {
+    const hw = (y - h * 0.45) * 0.35;
+    for (let dx = -hw; dx <= hw; dx++) P.px(Math.round(cx + dx), base - h + y, bay(cx + dx, y) < 0.7 ? lit : hex("#c06a2a") >>> 0);
+  }
+  P.px(cx, base - h - 1, hex("#2a1c14") >>> 0);
+  P.px(cx, base - h - 2, hex("#2a1c14") >>> 0);
+}
+function fence(P, x0, x1, base) {
+  const wood = hex("#3a2a1c") >>> 0, hi = hex("#5a4230") >>> 0;
+  for (let x = x0; x <= x1; x += 12) P.rect(x, base - 14, 2, 14, wood), P.px(x, base - 14, hi);
+  for (const y of [base - 11, base - 6]) for (let x = x0; x <= x1; x++) P.px(x, y, (x & 7) === 0 ? hi : wood);
+}
+function rack(P, x, base) {
+  const wood = hex("#4a3424") >>> 0, steel = hex("#a9bcdc") >>> 0;
+  P.rect(x, base - 16, 2, 16, wood);
+  P.rect(x + 20, base - 16, 2, 16, wood);
+  P.rect(x, base - 15, 22, 2, wood);
+  for (let i = 0; i < 4; i++) P.rect(x + 4 + i * 4, base - 22 + (i % 2) * 3, 1, 18 - (i % 2) * 3, i === 2 ? hex("#8a6a4a") >>> 0 : steel);
+}
+/** A broken stone arch at the foot of the path, framing the climb. */
+function gate(P, cx, base) {
+  const C = R(["#0e0c14", "#1a1724", "#2a2638", "#3e3a52", "#565070"]);
+  for (const side of [-1, 1])
+    for (let y = base - 58; y < base; y++)
+      for (let i = 0; i < 9; i++) {
+        const x = cx + side * 30 + i - 4, broke = side > 0 && y < base - 50 + (i % 3) * 2;
+        if (broke) continue;
+        P.px(x, y, step(C, 0.3 + (i < 2 ? 0.3 : 0) - (i > 6 ? 0.15 : 0) + ((y - base) % 9 === 0 ? -0.2 : 0), x, y));
+      }
+  for (let x = cx - 34; x < cx + 22; x++) {
+    const u = (x - cx) / 34, top = base - 62 - Math.round(Math.sqrt(Math.max(0, 1 - u * u)) * 10);
+    for (let y = top; y < top + 6; y++) P.px(x, y, step(C, 0.45 + (y === top ? 0.3 : 0), x, y));
+  }
+}
+function signpost(P, x, base) {
+  const wood = hex("#4a3424") >>> 0, plank = hex("#6a4c30") >>> 0, ink = hex("#ffb45a") >>> 0;
+  P.rect(x, base - 16, 2, 16, wood);
+  // a plank pointing on, toward the spire, with an ember-painted arrow
+  for (let j = 0; j < 5; j++) for (let i = 0; i < 14 - (j === 0 || j === 4 ? 1 : 0); i++) P.px(x - 4 + i + (j === 2 ? 1 : 0), base - 18 + j, plank);
+  P.px(x + 10, base - 16, plank);
+  for (let i = 0; i < 6; i++) P.px(x - 1 + i, base - 16, ink);
+  P.px(x + 4, base - 17, ink);
+  P.px(x + 4, base - 15, ink);
+}
+function clearing(P, cx, cy, rx, ry, D) {
+  for (let y = Math.floor(cy - ry); y <= cy + ry; y++)
+    for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+      const u = Math.hypot((x - cx) / rx, (y - cy) / ry);
+      if (u > 1 || bay(x, y) < (u - 0.7) * 3.3) continue;
+      P.px(x, y, step(D, 0.62 - u * 0.4 + fbm(x * 0.15, y * 0.3, 3, 2) * 0.18, x, y));
+    }
+}
+
 // ---- the biomes
 export const PAINTERS = {
   crypt(buf, seed = 1) {
     const P = new Paint(buf);
     bricks(P, ["#0d0b12", "#1a1722", "#26222f", "#332e3e", "#423b4f", "#544b62"], { seed });
-    for (const cx of [80, 240]) arch(P, cx, 44, 64, ["#07060a", "#110e16", "#1a1622", "#2e2838", "#4a4060"]);
-    for (const x of [20, 152, 284]) pillar(P, x, 16, ["#14121a", "#24202c", "#38323f", "#4e4656", "#6a6074", "#8a7e94"]);
-    banner(P, 154, 18, 34, ["#2a0810", "#4a0e1a", "#6e1424", "#8c1c2c"], "#c48412");
+    const cols = spread(W, 132);
+    for (const cx of mids(cols)) arch(P, cx, 44, 56, ["#07060a", "#110e16", "#1a1622", "#2e2838", "#4a4060"]);
+    for (const x of cols) pillar(P, x - 8, 16, ["#14121a", "#24202c", "#38323f", "#4e4656", "#6a6074", "#8a7e94"]);
+    cols.forEach((x, i) => i % 2 === (cols.length >> 1) % 2 && banner(P, x - 6, 18, 30, ["#2a0810", "#4a0e1a", "#6e1424", "#8c1c2c"], "#c48412"));
     topShade(P, 40, 0.65);
     floor(P, ["#0c0a10", "#16131c", "#211c28", "#2c2634", "#383040", "#463c50"], { seed: seed + 3 });
     vignette(P, 0.9);
@@ -277,8 +377,8 @@ export const PAINTERS = {
   frost(buf, seed = 3) {
     const P = new Paint(buf);
     sky(P, ["#06081a", "#0a1028", "#101a3a", "#18284e", "#223864", "#2e4c7c"], { stars: true, seed, moon: [252, 26, 9] });
-    ridge(P, ["#0e1430", "#162042", "#1e2c56", "#2a3c6a", "#e4f0ff"], 92, 56, { seed: seed + 1, freq: 0.012, snow: true });
-    ridge(P, ["#0a0e22", "#121a36", "#1a2648", "#24345c", "#c8dcf4"], 112, 34, { seed: seed + 2, freq: 0.02, snow: true });
+    ridge(P, ["#0e1430", "#162042", "#1e2c56", "#2a3c6a", "#e4f0ff"], FLOOR_TOP - 24, 50, { seed: seed + 1, freq: 0.012, snow: true });
+    ridge(P, ["#0a0e22", "#121a36", "#1a2648", "#24345c", "#c8dcf4"], FLOOR_TOP - 4, 30, { seed: seed + 2, freq: 0.02, snow: true });
     floor(P, ["#1a2648", "#2a3c6a", "#4a6a9a", "#7ca0cc", "#b4d0f0", "#e4f0ff"], { seed: seed + 9, style: "snow", base: 0.62, var: 0.15, edge: 5 });
     vignette(P, 0.8);
   },
@@ -287,7 +387,7 @@ export const PAINTERS = {
     panels(P, ["#0a0c12", "#141822", "#1e2430", "#2a3242", "#384256", "#4a566c"], { seed });
     // a long window band showing the storm outside: sky, a burning skyline, factory towers
     const sk = R(["#06060c", "#0c0c18", "#141628", "#1c2036", "#262a44"]), win = (x, y) => y >= 14 && y < 56 && x % 64 > 3;
-    const towers = Array.from({ length: 8 }, (_, i) => ({ x: i * 42 + Math.floor(rand(i, 4) * 12), h: 14 + rand(i, 5) * 24, w: 8 + rand(i, 6) * 10 }));
+    const towers = Array.from({ length: Math.ceil(W / 40) }, (_, i) => ({ x: i * 42 + Math.floor(rand(i, 4) * 12), h: 14 + rand(i, 5) * 24, w: 8 + rand(i, 6) * 10 }));
     for (let y = 14; y < 56; y++)
       for (let x = 0; x < W; x++) {
         if (!win(x, y)) continue;
@@ -311,26 +411,62 @@ export const PAINTERS = {
   sanctum(buf, seed = 5) {
     const P = new Paint(buf);
     marble(P, ["#2a2420", "#4a4038", "#6e6254", "#968a78", "#bcb2a0", "#e0d8c8", "#f8f4ec"], { seed });
-    for (const cx of [64, 160, 256]) windowGlass(P, cx, 30, 70, 12, ["#3a6ab0", "#c03a3a", "#e8b040", "#4aa060", "#8a50c0", "#f0e8d0"]);
-    for (const x of [16, 108, 204, 296]) pillar(P, x, 10, ["#4a4038", "#6e6254", "#968a78", "#bcb2a0", "#e0d8c8", "#fffaf0"]);
+    const wins = spread(W, 96, 64);
+    for (const cx of wins) windowGlass(P, cx, 30, 60, 12, ["#3a6ab0", "#c03a3a", "#e8b040", "#4aa060", "#8a50c0", "#f0e8d0"]);
+    for (const x of [wins[0] - 48, ...wins.map((x) => x + 48)]) pillar(P, x - 5, 10, ["#4a4038", "#6e6254", "#968a78", "#bcb2a0", "#e0d8c8", "#fffaf0"]);
     P.rect(0, 4, W, 3, hex("#c48412") >>> 0);
     P.rect(0, FLOOR_TOP - 4, W, 2, hex("#c48412") >>> 0);
     topShade(P, 30, 0.35);
     floor(P, ["#3a3028", "#5c5044", "#8a7c68", "#b4a890", "#dcd2bc", "#f4eedc"], { seed: seed + 1, checker: true, tile: 26, base: 0.5, grout: 0.15 });
     vignette(P, 0.7);
   },
+  /** The camp: a valley under the night, one path running from the training yard past the fire to the spire. */
   hub(buf, seed = 6) {
-    const P = new Paint(buf);
-    sky(P, ["#05040c", "#0a0818", "#120e26", "#1c1636", "#281e48", "#3a2a5a"], { stars: true, seed, moon: [60, 30, 7] });
-    spire(P, 230, FLOOR_TOP - 10, 104);
-    ridge(P, ["#06050c", "#0c0a16", "#141020", "#1c162a", "#3a2a5a"], 100, 30, { seed: seed + 2, freq: 0.018 });
-    trees(P, ["#040308", "#0a0812", "#120e1c", "#1a1428"], FLOOR_TOP + 2, { seed, n: 18, h: 36 });
+    const P = new Paint(buf), L = HUB;
+    sky(P, ["#05040c", "#0a0818", "#120e26", "#1c1636", "#281e48", "#3a2a5a"], { stars: true, seed, moon: [70, 24, 7] });
+    // the horizon burns where the spire stands: that's the way
+    for (let y = 40; y < FLOOR_TOP; y++)
+      for (let x = Math.max(0, L.portal - 200); x < W; x++) {
+        const d = Math.hypot((x - L.portal) / 190, (y - FLOOR_TOP) / 60);
+        if (d < 1 && bay(x, y) < (1 - d) * 0.55) P.px(x, y, mix(P.get(x, y), hex("#6a2a3a"), 0.5 * (1 - d)) >>> 0);
+      }
+    spire(P, L.portal + 4, FLOOR_TOP - 4, 96);
+    ridge(P, ["#06050c", "#0c0a16", "#141020", "#1c162a", "#3a2a5a"], 86, 30, { seed: seed + 2, freq: 0.014 });
+    // woods close in at the ends and thin out over the camp
+    treeline(P, ["#040308", "#0a0812", "#120e1c", "#1a1428"], FLOOR_TOP + 2, seed, (x) => (x < L.yard[1] + 40 || x > L.codex + 40 ? 1 : Math.abs(x - L.fire) < 150 ? 0.25 : 0.6));
+    // tents round the fire, a rack and a fence in the yard, a stone arch over the climb
+    for (const [x, w, h, c] of L.tents) tent(P, x, FLOOR_TOP + 3, w, h, c);
+    fence(P, 6, L.yard[1] + 34, FLOOR_TOP + 2);
+    rack(P, L.yard[0] + 18, FLOOR_TOP + 1);
+    gate(P, L.portal, FLOOR_TOP + 2);
     floor(P, ["#08060c", "#100c14", "#18141e", "#211b28", "#2c2434", "#3a3042"], { seed: seed + 4, style: "rock", base: 0.42, var: 0.25 });
-    // grass tufts
-    for (let i = 0; i < 160; i++) {
-      const x = Math.floor(rand(i, 3) * W), y = FLOOR_TOP + 2 + Math.floor(rand(i, 4) * (H - FLOOR_TOP - 3));
-      P.px(x, y, hex(i % 3 ? "#1e2a1a" : "#2c3c24") >>> 0);
-      P.px(x, y - 1, hex("#16201a") >>> 0);
+    // the path: packed earth from one end to the other, with a clearing round the fire and stones before the shrine
+    const D = R(["#24191a", "#33241f", "#443026", "#563e2e", "#6a4e38"]);
+    for (let x = 0; x < W; x++) {
+      const cy = hubPathY(x), hw = 9 + noise(x * 0.07, seed) * 2.5;
+      for (let y = Math.floor(cy - hw * 0.45); y <= cy + hw * 0.45 + 1; y++) {
+        const u = Math.abs(y - cy) / (hw * 0.45 + 1);
+        if (u > 1 || bay(x, y) < (u - 0.75) * 3) continue;
+        P.px(x, y, step(D, 0.75 - u * 0.5 + fbm(x * 0.2, y * 0.3, seed, 2) * 0.2, x, y));
+      }
+    }
+    clearing(P, L.fire, 146, 58, 18, D);
+    clearing(P, L.portal, 132, 46, 14, R(["#141018", "#221c28", "#30283a", "#40364c", "#544866"]));
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2, x = L.shrine + Math.cos(a) * 22, y = L.stationY + 2 + Math.sin(a) * 6;
+      P.rect(Math.round(x) - 1, Math.round(y), 3, 2, hex("#4a4462") >>> 0);
+      P.px(Math.round(x), Math.round(y) - 1, hex("#6a6088") >>> 0);
+    }
+    // signposts along the path point the way on
+    for (const x of L.signs) signpost(P, x, FLOOR_TOP + 16);
+    // grass and flowers, kept off the path
+    for (let i = 0; i < W * 0.7; i++) {
+      const x = Math.floor(rand(i, 3) * W), y = FLOOR_TOP + 3 + Math.floor(rand(i, 4) * (H - FLOOR_TOP - 4));
+      if (Math.abs(y - hubPathY(x)) < 7 || Math.hypot((x - L.fire) / 58, (y - 146) / 18) < 1) continue;
+      const flower = rand(i, 7) > 0.93;
+      P.px(x, y, hex(flower ? pickOf(["#c684ff", "#ffd84a", "#ff86e6"], rand(i, 8)) : i % 3 ? "#1e2a1a" : "#2c3c24") >>> 0);
+      P.px(x, y - 1, hex(flower ? "#2c3c24" : "#16201a") >>> 0);
+      if (i % 5 === 0) P.px(x + 1, y - 1, hex("#16201a") >>> 0);
     }
     vignette(P, 1.0);
   },

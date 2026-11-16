@@ -3,7 +3,7 @@
 
 import { PAL, fxMod, createFx, actorAlphaOf } from "../engine/pfx.js";
 import { G, sfx, rnd, chance, clampX, clampY } from "./ctx.js";
-import { who } from "./run.js";
+import { who, buildOf } from "./run.js";
 
 export const ELEM = {
   phys: { pal: null, sfx: "hit" },
@@ -145,11 +145,13 @@ export function damage(t, amt, info = {}) {
   if (t.inv > 0 && !info.dot) return false;
   const run = G.run, src = info.src, fromPlayer = src?.isPlayer || src?.owner?.isPlayer || info.fromPlayer;
   let dmg = amt, crit = !!info.crit;
-  if (fromPlayer && run && !info.dot) {
-    dmg *= run.stats.dmg;
-    if (!info.noCrit && !crit && chance(run.stats.crit + (who(info)?.cls?.crit ?? 0))) crit = true;
-    if (crit) dmg *= run.stats.critMul;
-    for (const f of run.hooks.preHit) dmg = f(t, dmg, info) ?? dmg;
+  // the hitter's own build: their boons, their numbers
+  const bd = fromPlayer && run ? who(info) : null, B = bd ? buildOf(bd) : null;
+  if (B && !info.dot) {
+    dmg *= B.stats.dmg;
+    if (!info.noCrit && !crit && chance(B.stats.crit + (bd.cls?.crit ?? 0))) crit = true;
+    if (crit) dmg *= B.stats.critMul;
+    for (const f of B.hooks.preHit) dmg = f(t, dmg, info) ?? dmg;
   }
   if (t.st.curse) dmg *= STATUS.curse.vuln;
   if (t.st.petrify) dmg *= STATUS.petrify.vuln;
@@ -165,7 +167,7 @@ export function damage(t, amt, info = {}) {
   if (t.st.sleep) delete t.st.sleep;
   if (!info.dot) {
     const dir = info.dir ?? (src ? Math.sign(t.x - src.x) || 1 : 1);
-    const kb = (info.kb ?? 80) * (t.kbResist ?? 1) * (fromPlayer && run ? run.stats.kb : 1);
+    const kb = (info.kb ?? 80) * (t.kbResist ?? 1) * (B ? B.stats.kb : 1);
     t.kbx += dir * kb;
     if (info.kz && !t.heavy) t.vz = Math.max(t.vz, info.kz * (t.kbResist ?? 1));
     if (!t.armored) t.stun = Math.max(t.stun, info.stun ?? 0.25);
