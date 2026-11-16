@@ -12,8 +12,8 @@ export const ELEM_PAL = {
 };
 export const ELEM_NAME = { fire: "EMBER", ice: "RIME", shock: "STORM", shadow: "VOID", holy: "DAWN", poison: "BLIGHT", water: "TIDE", arcane: "ARCANA", phys: "IRON", blood: "BLOOD", tech: "FORGE", nature: "THORN" };
 
-// the player a boon acts through when it isn't tied to one: the first still standing
-const P = () => G.run?.alive()[0] ?? G.world.player;
+// the player a boon acts through: the one whose build holds it
+const P = (r) => r?.owner ?? G.run?.alive()[0] ?? G.world.player;
 const proc = (e, amt, o) => damage(e, amt, { fromPlayer: true, proc: true, noCrit: true, ...o });
 const nearestFoe = (x, y, r = 140) => G.world.nearest(x, y, "player", r);
 const every = (n) => {
@@ -24,25 +24,25 @@ const every = (n) => {
 export const BOONS = [
   // ---- ember
   { id: "kindle", name: "KINDLED EDGE", elem: "fire", rarity: "common", desc: "HITS HAVE A 25% CHANCE TO SET FOES BURNING.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.25)) applyStatus(t, "burn", 3, 1 + r.boons.filter((b) => b.elem === "fire").length * 0.3, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.25)) applyStatus(t, "burn", 3, 1 + r.boons.filter((b) => b.elem === "fire").length * 0.3, P(r)); }) },
   { id: "pyre", name: "FUNERAL PYRE", elem: "fire", rarity: "rare", desc: "BURNING FOES EXPLODE WHEN THEY DIE.", need: (r) => r.has("kindle") || r.clsId === "mage" || r.clsId === "gunslinger",
-    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "burn")) return; G.world.spawnFx("explosions/small-explosion", e.x, e.y, { size: 0.45 }, { prio: 1 }); sfx("boom", 0.5); aoe(P(), e.x, e.y, 36, 14, { elem: "fire", proc: true, status: ["burn", 3], kb: 120 }); }) },
+    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "burn")) return; G.world.spawnFx("explosions/small-explosion", e.x, e.y, { size: 0.45 }, { prio: 1 }); sfx("boom", 0.5); aoe(P(r), e.x, e.y, 36, 14, { elem: "fire", proc: true, status: ["burn", 3], kb: 120 }); }) },
   { id: "flamewake", name: "FLAME WAKE", elem: "fire", rarity: "rare", desc: "DASHING RINGS YOU IN FIRE THAT BURNS NEARBY FOES. (3S COOLDOWN)",
     apply: (r) => { let cd = 0; r.hook("tick", (_, dt) => (cd -= dt)); r.hook("onDashEnd", (p) => { if (cd > 0) return; cd = 3; G.world.spawnFx("fire/fire-ring", p.x, p.y, { reach: 64 }, { prio: 1, speed: 1.4 }); sfx("fire"); G.world.after(0.25, () => aoe(p, p.x, p.y, 46, 10, { elem: "fire", status: ["burn", 3], proc: true, kb: 140 })); }); } },
   { id: "phoenix", name: "PHOENIX HEART", elem: "fire", rarity: "legendary", desc: "ONCE THIS CLIMB, RISE AGAIN FROM DEATH.",
     apply: (r) => (r.lives += 1) },
   // ---- rime
   { id: "frostbite", name: "FROSTBITE", elem: "ice", rarity: "common", desc: "HITS HAVE A 30% CHANCE TO CHILL, SLOWING FOES.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "slow", 3, 1, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "slow", 3, 1, P(r)); }) },
   { id: "shatter", name: "SHATTERPOINT", elem: "ice", rarity: "rare", desc: "CHILLED OR FROZEN FOES SHATTER ON DEATH, FREEZING THEIR NEIGHBOURS.",
-    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "slow") && !has(e, "freeze")) return; G.world.spawnFx("ice/ice-shatter", e.x, e.y, {}, { prio: 1 }); sfx("shatter"); for (const o of aoe(P(), e.x, e.y, 40, 10, { elem: "ice", proc: true, kb: 60 })) if (chance(0.5)) applyStatus(o, "freeze", 1.6); }) },
+    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "slow") && !has(e, "freeze")) return; G.world.spawnFx("ice/ice-shatter", e.x, e.y, {}, { prio: 1 }); sfx("shatter"); for (const o of aoe(P(r), e.x, e.y, 40, 10, { elem: "ice", proc: true, kb: 60 })) if (chance(0.5)) applyStatus(o, "freeze", 1.6); }) },
   { id: "novadash", name: "NOVA STEP", elem: "ice", rarity: "rare", desc: "DASHING RELEASES A FROST NOVA THAT FREEZES. (4S COOLDOWN)",
     apply: (r) => { let cd = 0; r.hook("tick", (_, dt) => (cd -= dt)); r.hook("onDash", (p) => { if (cd > 0) return; cd = 4; G.world.spawnFx("ice/frost-nova", p.x, p.y, { reach: 62 }, { prio: 1, speed: 1.2 }); sfx("ice", 1.2); G.world.after(0.35, () => { for (const e of aoe(p, p.x, p.y, 56, 8, { elem: "ice", proc: true, kb: 40 })) applyStatus(e, "freeze", 1.8); }); }); } },
   { id: "icicles", name: "ICICLE RAIN", elem: "ice", rarity: "epic", desc: "EVERY 6TH HIT DROPS AN ICICLE ON YOUR TARGET.",
-    apply: (r) => { const n = every(6); r.hook("onHit", (t, d, i) => { if (i.proc || !n()) return; const x = t.x, y = t.y; G.world.spawnFx("ice/icicle-fall", x, y, {}, { prio: 1 }); G.world.after(0.95, () => { sfx("shatter", 0.6); aoe(P(), x, y, 24, 22, { elem: "ice", proc: true, status: ["freeze", 1.2, 0.5], kb: 30 }); }); }); } },
+    apply: (r) => { const n = every(6); r.hook("onHit", (t, d, i) => { if (i.proc || !n()) return; const x = t.x, y = t.y; G.world.spawnFx("ice/icicle-fall", x, y, {}, { prio: 1 }); G.world.after(0.95, () => { sfx("shatter", 0.6); aoe(P(r), x, y, 24, 22, { elem: "ice", proc: true, status: ["freeze", 1.2, 0.5], kb: 30 }); }); }); } },
   // ---- storm
   { id: "static", name: "STATIC CHARGE", elem: "shock", rarity: "common", desc: "HITS HAVE A 20% CHANCE TO ELECTRIFY, ARCING TO NEIGHBOURS.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.2)) applyStatus(t, "shock", 3, 1, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.2)) applyStatus(t, "shock", 3, 1, P(r)); }) },
   { id: "chain", name: "CHAIN LIGHTNING", elem: "shock", rarity: "rare", desc: "CRITICAL HITS LEAP TO THREE MORE FOES.",
     apply: (r) => r.hook("onHit", (t, d, i) => {
       if (i.proc || !i.crit) return;
@@ -61,13 +61,13 @@ export const BOONS = [
       sfx("zap");
     }) },
   { id: "thunder", name: "THUNDER CALL", elem: "shock", rarity: "epic", desc: "EVERY 5 SECONDS, LIGHTNING STRIKES A FOE.",
-    apply: (r) => { let t = 5; r.hook("tick", (_, dt) => { if ((t -= dt) > 0 || !G.room?.fighting) return; t = 5; const p = P(), e = p && pick(G.world.foes("player")); if (!e) return; const x = e.x, y = e.y; G.world.spawnFx("lightning/lightning-strike", x, y, {}, { prio: 1 }); G.world.after(0.75, () => { sfx("thunder"); G.world.shake(3, 0.2); aoe(p, x, y, 30, 26, { elem: "shock", proc: true, status: ["shock", 2], kb: 80 }); }); }); } },
+    apply: (r) => { let t = 5; r.hook("tick", (_, dt) => { if ((t -= dt) > 0 || !G.room?.fighting) return; t = 5; const p = P(r), e = p && pick(G.world.foes("player")); if (!e) return; const x = e.x, y = e.y; G.world.spawnFx("lightning/lightning-strike", x, y, {}, { prio: 1 }); G.world.after(0.75, () => { sfx("thunder"); G.world.shake(3, 0.2); aoe(p, x, y, 30, 26, { elem: "shock", proc: true, status: ["shock", 2], kb: 80 }); }); }); } },
   { id: "ballzap", name: "BALL LIGHTNING", elem: "shock", rarity: "rare", desc: "A BALL OF LIGHTNING FOLLOWS YOU AND ZAPS FOES NEAR IT.",
     room: (r, p) => { const orb = G.world.spawnFx("lightning/ball-lightning", p.x, p.y, {}, { follow: p, ox: -18, oy: -40, prio: 2, dz: -2 }); let t = 0; p.ballTick = (dt) => { if ((t -= dt) > 0) return; t = 1.2; const e = nearestFoe(p.x, p.y, 90); if (!e) return; G.world.spawnFx("lightning/zap-hit", e.x, e.y - 16, {}, { prio: 0 }); sfx("zap", 0.4); proc(e, 6, { elem: "shock", kb: 20, noNumber: false }); }; },
     apply: (r) => r.hook("tick", (_, dt) => { if (G.room?.fighting) for (const p of r.alive()) p.ballTick?.(dt); }) },
   // ---- void
   { id: "hex", name: "HEXBLADE", elem: "shadow", rarity: "common", desc: "HITS HAVE A 25% CHANCE TO CURSE: CURSED FOES TAKE 40% MORE DAMAGE.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.25)) applyStatus(t, "curse", 4, 1, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.25)) applyStatus(t, "curse", 4, 1, P(r)); }) },
   { id: "siphon", name: "SOUL SIPHON", elem: "shadow", rarity: "rare", desc: "EVERY 12 KILLS RESTORE HALF A HEART.",
     apply: (r) => { const n = every(12); r.hook("onKill", (e, i) => { if (!n()) return; const p = who(i); if (!p || p.down) return; G.world.spawnFx("shadow/life-steal", p.x, p.y, { actor: p.snapshot() }, { follow: p, prio: 1, life: 1.2 }); p.heal(1); }); } },
   { id: "skulls", name: "NECROMANTIC CHOIR", elem: "shadow", rarity: "epic", desc: "SKULLS CIRCLE YOU AND SPIT VOID FIRE AT FOES.",
@@ -80,7 +80,7 @@ export const BOONS = [
     room: (r, p) => { p.shield = Math.max(p.shield, 1); p.aegisFx = G.world.spawnFx("holy/divine-shield", p.x, p.y, { actor: p.snapshot() }, { follow: p, prio: 2 }); },
     apply: (r) => { r.hook("onBlock", (p) => { if (p.aegisFx) G.world.fx.stop(p.aegisFx); p.aegisFx = null; }); } },
   { id: "smiter", name: "JUDGEMENT", elem: "holy", rarity: "rare", desc: "CRITICAL HITS HAVE A 35% CHANCE TO CALL DOWN A SMITE.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (i.proc || !i.crit || !chance(0.35)) return; const x = t.x, y = t.y; G.world.spawnFx("holy/smite", x, y, {}, { prio: 1 }); sfx("holy", 0.7); G.world.after(0.55, () => aoe(P(), x, y, 34, 24, { elem: "holy", proc: true, kb: 120, kz: 100 })); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (i.proc || !i.crit || !chance(0.35)) return; const x = t.x, y = t.y; G.world.spawnFx("holy/smite", x, y, {}, { prio: 1 }); sfx("holy", 0.7); G.world.after(0.55, () => aoe(P(r), x, y, 34, 24, { elem: "holy", proc: true, kb: 120, kz: 100 })); }) },
   { id: "blessing", name: "BLESSING", elem: "holy", rarity: "common", desc: "CLEARING A ROOM RESTORES HALF A HEART.",
     apply: (r) => r.hook("onRoomClear", () => r.each((p) => { if (p.hp < p.maxHp) { G.world.spawnFx("holy/blessing", p.x, p.y, { actor: p.snapshot() }, { follow: p, life: 1.6, prio: 1 }); p.heal(1, true); sfx("heal"); } })) },
   { id: "halo", name: "UNBROKEN HALO", elem: "holy", rarity: "epic", desc: "+35% DAMAGE WHILE YOUR HEARTS ARE FULL.",
@@ -90,9 +90,9 @@ export const BOONS = [
     apply: (r) => { for (const p of r.players) { p.maxHp += 2; if (!p.down) p.hp = p.maxHp; } } },
   // ---- blight / thorn
   { id: "venom", name: "VENOM", elem: "poison", rarity: "common", desc: "HITS HAVE A 30% CHANCE TO POISON.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "poison", 4, 1 + r.boons.filter((b) => b.elem === "poison").length * 0.3, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "poison", 4, 1 + r.boons.filter((b) => b.elem === "poison").length * 0.3, P(r)); }) },
   { id: "spores", name: "SPORE BLOOM", elem: "poison", rarity: "rare", desc: "FOES THAT DIE POISONED BURST INTO A CLOUD OF SPORES.",
-    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "poison")) return; G.world.spawnFx("nature/spore-burst", e.x, e.y, {}, { prio: 1, speed: 1.4 }); sfx("poison"); G.world.after(0.5, () => { for (const o of aoe(P(), e.x, e.y, 46, 6, { elem: "poison", proc: true, kb: 30 })) applyStatus(o, "poison", 4); }); }) },
+    apply: (r) => r.hook("onKill", (e) => { if (!has(e, "poison")) return; G.world.spawnFx("nature/spore-burst", e.x, e.y, {}, { prio: 1, speed: 1.4 }); sfx("poison"); G.world.after(0.5, () => { for (const o of aoe(P(r), e.x, e.y, 46, 6, { elem: "poison", proc: true, kb: 30 })) applyStatus(o, "poison", 4); }); }) },
   { id: "thorns", name: "BRIAR SKIN", elem: "nature", rarity: "rare", desc: "WHEN YOU ARE HURT, THORNS ERUPT ON BOTH SIDES OF YOU.",
     apply: (r) => r.hook("onHurt", (p) => { for (const f of [1, -1]) G.world.spawnFx("nature/thorns", p.x + f * 6, p.y, { count: 4 }, { flip: f < 0, prio: 1 }); G.world.after(0.3, () => { aoe(p, p.x, p.y, 90, 20, { ry: 14, elem: "nature", proc: true, kz: 100, status: ["bleed", 3] }); }); }) },
   { id: "roots", name: "ROOTBIND", elem: "nature", rarity: "common", desc: "AFTER A DASH, ROOTS SNARE FOES AROUND YOU. (4S COOLDOWN)",
@@ -126,12 +126,12 @@ export const BOONS = [
   { id: "tidal", name: "TIDAL FORCE", elem: "water", rarity: "rare", desc: "+60% KNOCKBACK. YOUR SPECIAL SENDS A CRASHING WAVE FORWARD.",
     apply: (r) => { r.stats.kb *= 1.6; r.hook("onSpecial", (p) => { G.world.after(0.15, () => { G.world.spawnFx("water/wave-crash", p.x + p.facing * 50, p.y, {}, { flip: p.facing < 0, prio: 1 }); sfx("water", 1.2); G.world.after(0.9, () => aoe(p, p.x + p.facing * 50, p.y, 60, 14, { elem: "water", proc: true, kb: 260 })); }); }); } },
   { id: "geyser", name: "WELLSPRING", elem: "water", rarity: "common", desc: "KILLS HAVE A 25% CHANCE TO ERUPT A GEYSER UNDER ANOTHER FOE.",
-    apply: (r) => r.hook("onKill", (e) => { if (!chance(0.25)) return; const t = G.world.nearest(e.x, e.y, "player", 140, (o) => o !== e); if (!t) return; const x = t.x, y = t.y; G.world.spawnFx("water/geyser", x, y, { height: 60 }, { prio: 1, speed: 1.8 }); G.world.after(0.65, () => aoe(P(), x, y, 24, 16, { elem: "water", proc: true, kz: 220 })); }) },
+    apply: (r) => r.hook("onKill", (e) => { if (!chance(0.25)) return; const t = G.world.nearest(e.x, e.y, "player", 140, (o) => o !== e); if (!t) return; const x = t.x, y = t.y; G.world.spawnFx("water/geyser", x, y, { height: 60 }, { prio: 1, speed: 1.8 }); G.world.after(0.65, () => aoe(P(r), x, y, 24, 16, { elem: "water", proc: true, kz: 220 })); }) },
   { id: "bubble", name: "BUBBLE BARRIER", elem: "water", rarity: "common", desc: "EVERY 15 SECONDS IN A FIGHT, BUBBLES GATHER INTO A SHIELD.",
     apply: (r) => { let t = 15; r.hook("tick", (_, dt) => { if (!G.room?.fighting || r.alive().every((p) => p.shield > 0)) return; if ((t -= dt) > 0) return; t = 15; for (const p of r.alive()) if (!p.shield) { p.shield = 1; G.world.spawnFx("water/bubbles", p.x, p.y, {}, { follow: p, life: 2, prio: 1 }); } sfx("water", 0.5, 1.6); }); } },
   // ---- iron / blood
   { id: "bleed", name: "BLOODLETTER", elem: "blood", rarity: "common", desc: "HITS HAVE A 30% CHANCE TO MAKE FOES BLEED.",
-    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "bleed", 4, 1, P()); }) },
+    apply: (r) => r.hook("onHit", (t, d, i) => { if (!i.proc && chance(0.3)) applyStatus(t, "bleed", 4, 1, P(r)); }) },
   { id: "berserk", name: "BERSERKER", elem: "blood", rarity: "rare", desc: "+45% DAMAGE WHILE BELOW HALF YOUR HEARTS.",
     apply: (r) => { r.hook("preHit", (t, d, i) => { const p = who(i); return p && p.hp * 2 <= p.maxHp ? d * 1.45 : d; }); r.hook("tick", () => { for (const p of r.alive()) { if (p.hp * 2 <= p.maxHp && !p.st.rage) applyStatus(p, "rage", 9999); if (p.hp * 2 > p.maxHp && p.st.rage) delete p.st.rage; } }); } },
   { id: "fleet", name: "FLEETFOOT", elem: "phys", rarity: "common", desc: "+20% MOVE SPEED, +25% DASH DISTANCE.",
@@ -156,7 +156,7 @@ export const BOONS = [
   { id: "emp", name: "EMP CORE", elem: "tech", rarity: "rare", desc: "WHEN YOU ARE HURT, AN EMP STUNS EVERY FOE AROUND YOU.",
     apply: (r) => r.hook("onHurt", (p) => { G.world.spawnFx("scifi/emp-blast", p.x, p.y, {}, { prio: 2 }); sfx("zap", 1.2, 0.5); G.world.after(0.4, () => { for (const e of aoe(p, p.x, p.y, 90, 6, { elem: "shock", proc: true, kb: 140 })) applyStatus(e, "stun", 2); }); }) },
   { id: "disc", name: "SAWBLADE DRONE", elem: "tech", rarity: "epic", desc: "EVERY 2.5 SECONDS, A SAWBLADE FLIES AT THE NEAREST FOE, CUTTING THROUGH.",
-    apply: (r) => { let t = 2.5; r.hook("tick", (_, dt) => { if (!G.room?.fighting || (t -= dt) > 0) return; t = 2.5; const p = P(), e = p && nearestFoe(p.x, p.y, 200); if (!e) return; const d = Math.hypot(e.x - p.x, e.y - p.y) || 1; G.world.add(new Projectile({ x: p.x, y: p.y, z: 22, vx: ((e.x - p.x) / d) * 260, vy: ((e.y - p.y) / d) * 160, team: "player", owner: p, fxId: "projectiles/energy-disc", fxOpts: { size: 7 }, dmg: 12, pierce: 4, elem: "phys", kind: "slash", life: 1.2, fromPlayer: true, status: ["bleed", 2, 0.5] })); sfx("laser", 0.5, 0.7); }); } },
+    apply: (r) => { let t = 2.5; r.hook("tick", (_, dt) => { if (!G.room?.fighting || (t -= dt) > 0) return; t = 2.5; const p = P(r), e = p && nearestFoe(p.x, p.y, 200); if (!e) return; const d = Math.hypot(e.x - p.x, e.y - p.y) || 1; G.world.add(new Projectile({ x: p.x, y: p.y, z: 22, vx: ((e.x - p.x) / d) * 260, vy: ((e.y - p.y) / d) * 160, team: "player", owner: p, fxId: "projectiles/energy-disc", fxOpts: { size: 7 }, dmg: 12, pierce: 4, elem: "phys", kind: "slash", life: 1.2, fromPlayer: true, status: ["bleed", 2, 0.5] })); sfx("laser", 0.5, 0.7); }); } },
   { id: "field", name: "FORCE FIELD", elem: "tech", rarity: "epic", desc: "GO 8 SECONDS UNHURT TO RAISE A FORCE FIELD THAT BLOCKS A HIT.",
     apply: (r) => { r.hook("onHurt", (p) => (p.fieldT = 8)); r.hook("onBlock", (p) => { if (p.fieldFx) G.world.fx.stop(p.fieldFx); p.fieldFx = null; p.fieldT = 8; }); r.hook("tick", (_, dt) => { for (const p of r.alive()) { if (p.shield > 0) continue; p.fieldT = (p.fieldT ?? 8) - dt; if (p.fieldT > 0) continue; p.fieldT = 8; p.shield = 1; p.fieldFx = G.world.spawnFx("scifi/force-field", p.x, p.y, { radius: 36 }, { follow: p, prio: 2 }); sfx("laser", 0.4, 0.4); } }); } },
   { id: "jet", name: "JETSTREAM", elem: "tech", rarity: "common", desc: "+40% DASH DISTANCE, DASHES RECHARGE FASTER AND BURN WHAT THEY PASS.",

@@ -3,10 +3,14 @@
 // (the game was called Emberspire when saves began: the key stays so nobody loses theirs)
 const KEY = "emberspire.save.v1";
 
+const CLASS_IDS = ["knight", "brute", "ranger", "reaper", "gunslinger", "mage"];
+const ALL_UNLOCKED = () => Object.fromEntries(CLASS_IDS.map((id) => [id, true]));
+
 const DEFAULT = () => ({
   embers: 0,
   totalEmbers: 0,
-  unlocked: { knight: true },
+  // every vessel is awake from the start: no class is locked behind embers
+  unlocked: ALL_UNLOCKED(),
   upgrades: {},
   codex: [],
   bestiary: [],
@@ -21,7 +25,7 @@ export function loadSave() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const d = JSON.parse(raw), base = DEFAULT();
-      return { ...base, ...d, stats: { ...base.stats, ...d.stats }, settings: { ...base.settings, ...d.settings }, unlocked: { ...base.unlocked, ...d.unlocked } };
+      return { ...base, ...d, stats: { ...base.stats, ...d.stats }, settings: { ...base.settings, ...d.settings }, unlocked: ALL_UNLOCKED() };
     }
   } catch {}
   return DEFAULT();

@@ -49,7 +49,7 @@ const knight = {
 // ---------------------------------------------------------------- the brute: hammer, earth
 const HAMMER_GUARD = { ...READY, weapon: "hammer", fx: 10, fy: -19, sa: 1.2, two: false };
 const brute = {
-  id: "brute", name: "BRUTE", title: "THE ANVIL", cost: 30,
+  id: "brute", name: "BRUTE", title: "THE ANVIL", cost: 0,
   desc: "SLOW AND CRUSHING. A HAMMER THAT STUNS, A LEAPING GROUND POUND, AND THE EARTH ITSELF. TAKES LESS DAMAGE.",
   pal: { A: "#f6cf94", B: "#cf9150", C: "#925c2e", D: "#5c3418", E: "#566a3e", F: "#3c4a2c", G: "#26301c", J: "#2a1c14", m: "#ff4040", eye: "#ff8a2a", k: "#140c08" },
   ghost: "#ffb46a", guard: HAMMER_GUARD, hp: 12, speed: 64, armor: 0.75,
@@ -86,7 +86,7 @@ const brute = {
 const SCYTHE_GUARD = { ...READY, weapon: "scythe", fx: 10, fy: -20, sa: 1.35 };
 const SHADOW_SWEEP = ["#140a26", "#2b1252", "#481c88", "#6b2cc0", "#9a48ec", "#c684ff", "#ecc8ff"];
 const reaper = {
-  id: "reaper", name: "REAPER", title: "THE QUIET HARVEST", cost: 60,
+  id: "reaper", name: "REAPER", title: "THE QUIET HARVEST", cost: 0,
   desc: "A SCYTHE THAT CURSES. HANDS FROM BELOW THAT HOLD FOES IN PLACE, AND A HUNGRY VOID. KILLS FEED THE ULTIMATE.",
   pal: { A: "#cbc3dc", B: "#8d82ab", C: "#5c507c", D: "#382e52", E: "#2c2440", F: "#1f182c", G: "#150f1e", J: "#100c18", m: "#b04aff", eye: "#c684ff", k: "#08060c" },
   ghost: "#9a48ec", guard: SCYTHE_GUARD, hp: 9, speed: 78, elem: "shadow",
@@ -147,7 +147,7 @@ const shot = (dmg) => ({
   events: [ev(0.0005, bullet(dmg))],
 });
 const gunslinger = {
-  id: "gunslinger", name: "GUNSLINGER", title: "THE LAST ROUND", cost: 60,
+  id: "gunslinger", name: "GUNSLINGER", title: "THE LAST ROUND", cost: 0,
   desc: "FIGHTS FROM RANGE. RAPID SHOTS, A POINT-BLANK SHOTGUN THAT THROWS FOES BACK, AND A ROCKET. HIGHER CRIT CHANCE.",
   pal: { A: "#f2deb0", B: "#caa670", C: "#907048", D: "#5c442c", E: "#3c5c6c", F: "#2c4452", G: "#1c2c38", J: "#20160e", m: "#3cc8ff", eye: "#4ce8d8", k: "#100c0a" },
   ghost: "#4ce8d8", guard: PISTOL_REST, hp: 8, speed: 80, crit: 0.12,
@@ -186,7 +186,7 @@ const gunslinger = {
 // ---------------------------------------------------------------- the ranger: bow, nature
 const BOW_REST = { ...READY, weapon: "bow", sa: -0.4, fx: 12, fy: -20, bx: 6, by: -17 };
 const ranger = {
-  id: "ranger", name: "RANGER", title: "THE THORNWARDEN", cost: 40,
+  id: "ranger", name: "RANGER", title: "THE THORNWARDEN", cost: 0,
   desc: "ARROWS THAT PIERCE. A LINE OF THORNS THAT BLEEDS, AND A RAIN OF FALLING STARS. MOVES FAST.",
   pal: { A: "#dcecb4", B: "#a0c274", C: "#628c48", D: "#38582e", E: "#6e4c2c", F: "#4c341e", G: "#302012", J: "#1a2210", m: "#ffe066", eye: "#b4ff70", k: "#0c1008" },
   ghost: "#b4e070", guard: BOW_REST, hp: 8, speed: 86,
@@ -241,7 +241,7 @@ const fireBolt = (dmg, big) => (a, p) => {
   sfx("fire", 0.8);
 };
 const mage = {
-  id: "mage", name: "PYROMANCER", title: "THE EMBERWITCH", cost: 80,
+  id: "mage", name: "PYROMANCER", title: "THE EMBERWITCH", cost: 0,
   desc: "FIREBOLTS THAT BURN, A PIERCING ICE LANCE THAT FREEZES, AND A METEOR FROM THE SKY. BLINKS INSTEAD OF DASHING.",
   pal: { A: "#ffe8c4", B: "#eaa456", C: "#b2522e", D: "#722c20", E: "#5c2c6c", F: "#401e4c", G: "#281232", J: "#1c0c14", m: "#ffd84a", eye: "#ff9aff", k: "#100810" },
   ghost: "#ff8a2a", guard: { ...READY, fx: 9, fy: -19, bx: 8, by: -20 }, hp: 8, speed: 76, ultGain: 1.4,

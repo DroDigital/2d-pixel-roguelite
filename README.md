@@ -37,13 +37,24 @@ you're carrying, and a banner says how much. Spare lives from the Phoenix upgrad
 
 Everyone plays on one screen, each on their own device and with their own vessel.
 
+- **Dynamic split screen**: rooms are wider than the screen. While the party stands together, one camera follows
+  them all. When players drift apart, the screen splits by who stands near whom: two halves, two quarters over a
+  full-width strip, or four quarters. Views merge again when the party regroups. Each new view starts where the old
+  screen showed that spot, so the split peels apart instead of cutting. Edge markers point to foes no view shows.
+
 - **Joining**: at the camp, a second player presses attack on an unused gamepad (A / Start) or on the second
   keyboard half (`.` / Numpad 1). The party altar opens and the new player picks a vessel. Anyone can change
   vessel there later; the host leaves the altar to set off.
 - **Second keyboard player**: arrows to move, `.`/Num1 attack, `/`/Num2 special, Right Shift/Num3 dash,
   `'`/Num4 ultimate, `;`/Num0 use. The first player keeps WASD + J K L I.
-- **Shared and personal**: coins, embers, boons and the run's lives are shared by the party. Hearts, shields,
-  ultimate charge and special cooldowns belong to each player. Heals and on-hit boons go to whoever earned them.
+- **Shared and personal**: coins, embers and the run's lives are shared by the party. Boons are not: when a room
+  offers a boon, every player picks their own in turn, from offers made for their build, with their own device.
+  Those boons, and the stats they change, apply only to that player, so each builds their own run. A shop's boon
+  or a blood shrine's goes to whoever bought it. Hearts, shields, ultimate charge and special cooldowns belong to
+  each player too.
+- **What you hold**: each player's boons show as small pips in their elements' colours under their HUD panel.
+  **Pause → Boons** is the legend: one tab per player, every boon with its element and rarity, the selected one's
+  description, that player's damage, crit and speed, and the camp upgrades every climb carries.
 - **Downed, not dead**: once the party is out of lives, a player at zero hearts goes down. A teammate who holds
   **use** beside them for 1.3 s revives them with a third of their hearts. A bar over the downed player shows the
   revive filling and, under it, the 25 s before they bleed out.
@@ -110,9 +121,19 @@ about 100 ms before these changes to about 15 ms (from about 10 fps to about 55 
 - **~45 boons** across twelve elements (ember, rime, storm, void, dawn, blight, thorn, tide, arcana, iron, blood,
   forge), applying pixelfx's status effects (burning, frozen, poisoned, cursed, electrified, bleeding, charmed...)
   wrapped around the real silhouette of whatever they hit.
+- **Room to move**: fights take place in rooms nearly twice the screen's width (576 px), wardens in halls of
+  672 px, quiet rooms in 448 px, all with a deeper floor. The camera scrolls along and looks ahead of you; in a
+  warden's hall it also leans toward the warden. Foes come in around the party, and rewards and doors rise where
+  the party stands.
+- **Always visible**: when effects cover a player or wash them out, the game draws that player again on top of
+  everything, with a dark rim and a glow in their colour. The rim eases in and out.
 - **Rooms with choices**: doors show their reward (a boon of an element, gold, a heart, embers, focus) or lead to a
   merchant, a campfire, a blood shrine, a treasure chest, a champion or a mystery.
-- **Meta-progression**: embers carried home buy permanent upgrades at the camp's shrine and awaken new vessels.
+- **Every vessel from the start**: all six classes are free to play from the first climb.
+- **Meta-progression**: embers carried home buy permanent upgrades at the camp's shrine.
+- **The camp** is a valley you walk through along one path: the training yard (west), the party altar and the
+  fire among the tents, the ember shrine, the codex, and at the east end, under the spire, the way up. Signposts
+  point on, and a marker at the screen's edge shows the climb while it's out of sight.
 - **The Codex**: every effect you witness on the climb is recorded and can be replayed, acted out, at the camp.
 
 ## Languages
@@ -144,9 +165,12 @@ be switched in **Options → Language**; `?lang=de` in the URL forces one.
 ## How it's built
 
 - `vendor/pixelfx/` is an unmodified copy of pixelfx's `src/core` and `src/fx` (MIT, see its LICENSE and NOTICE).
-- `src/engine/`: the 320 x 180 screen and compositor, a cache that bakes looping effects into sparse frames,
+- `src/engine/`: the 320 x 180 screen and compositor (a room's backdrop is as wide as the room; the world copies
+  what each view shows into the screen's backdrop every frame), a cache that bakes looping effects into sparse frames,
   the live-effect manager, the rig renderer with per-vessel palettes and glowing eyes, input, a WebAudio synth for
   all sound and music, and saves.
+- `src/game/camera.js`: the cameras and the dynamic split screen. They render through pixelfx frames' own
+  `ox`/`oy` offsets, so effects, bodies and baked loops land in the right place in every view.
 - `src/game/`: combat, moves performed from pixelfx acts (`perform.js`), the classes, enemies, bosses, boons, rooms,
   procedurally painted backdrops (`art.js`), HUD, menus and scenes.
 - `src/engine/workers.js` and `fxworker.js`: the multi-core effect pool; `gl.js`: the GPU presenter.

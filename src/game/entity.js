@@ -268,7 +268,7 @@ export class Pickup extends Ent {
     const p = G.world.nearestPlayer(this.x, this.y);
     if (!p || this.age < (this.delay ?? 0.4)) return;
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy * 1.5);
-    const mag = this.magnet * (G.run?.stats.magnet ?? 1);
+    const mag = this.magnet * (p.bd?.stats.magnet ?? 1);
     if (this.auto || d < mag) {
       const sp = 60 + (this.auto ? 200 : 260 * (1 - d / mag)) + this.age * 40;
       this.x += (dx / (d || 1)) * sp * dt;

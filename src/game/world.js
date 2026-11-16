@@ -5,7 +5,8 @@ import { FxManager } from "../engine/fxm.js";
 import { createFx, fxMod, painterFor, hex, createFrame, clearFrame } from "../engine/pfx.js";
 import { pools } from "../engine/workers.js";
 import { bake, blit } from "../engine/bake.js";
-import { G, FLOOR_TOP } from "./ctx.js";
+import { G, FLOOR_TOP, VIEW_W, VIEW_H, ROOM_W } from "./ctx.js";
+import { Views } from "./camera.js";
 
 const SHADOW = 0x70000000;
 
@@ -27,6 +28,13 @@ export class World {
     this.weather = [];
     this.player = null;
     this.paused = false;
+    // the room's width when it was made, and the cameras looking into it (one view, or split in co-op)
+    this.roomW = ROOM_W;
+    this.cam = new Views(this);
+  }
+  /** Where the main view's camera is (its left edge, in room pixels). */
+  get camX() {
+    return this.cam.mainX;
   }
   /** Every player in the room (the host first). */
   get players() {
@@ -110,6 +118,7 @@ export class World {
     this.weather.push(P ? P.spawn(id, o, true) : createFx(fxMod(id), o));
   }
   update(dt) {
+    this.cam.update(dt);
     if (this.shakeT > 0) this.shakeT -= dt;
     if (this.freeze > 0) {
       this.freeze -= dt;
@@ -177,32 +186,80 @@ export class World {
     const k = this.shakeA * (this.shakeT / this.shake0), f = Math.floor(G.time * 60);
     return [Math.round(Math.sin(f * 2.4) * k), Math.round(Math.cos(f * 3.7) * k * 0.7)];
   }
+  /**
+   * Draw the room into the screen's frame through its views: one camera over the whole screen, or (in co-op, when the
+   * party spreads out) up to four, each rendered into a scratch frame of its own and laid into its part of the screen.
+   */
   draw(frame) {
+    const views = this.cam.layoutViews(), scr = G.screen, bg = scr.bg, src = scr.bgSrc, sw = scr.bgW ?? VIEW_W;
+    for (const v of views) {
+      const full = v.w === frame.w && v.h === frame.h;
+      const f = full ? frame : this.scratch(v.w, v.h);
+      if (!full) clearFrame(f);
+      f.ox = v.ox;
+      f.oy = v.oy;
+      G.view = v;
+      this.drawScene(f, v);
+      G.view = null;
+      if (!full) {
+        for (let r = 0; r < v.h; r++) {
+          frame.color.set(f.color.subarray(r * v.w, r * v.w + v.w), (v.sy + r) * frame.w + v.sx);
+          frame.light.set(f.light.subarray(r * v.w, r * v.w + v.w), (v.sy + r) * frame.w + v.sx);
+        }
+      }
+      f.ox = f.oy = 0;
+      // the backdrop under this view, from the room-wide painting
+      if (src && bg)
+        for (let r = 0; r < v.h; r++) {
+          const wy = Math.min(VIEW_H - 1, Math.max(0, v.oy + r)), from = wy * sw + Math.max(0, Math.min(sw - v.w, v.ox));
+          bg.set(src.subarray(from, from + v.w), (v.sy + r) * VIEW_W + v.sx);
+        }
+    }
+    this.cam.drawOverlay(views);
+  }
+  /** A frame the size of a split view (kept between frames). */
+  scratch(w, h) {
+    this.scr ??= {};
+    return (this.scr[w + "x" + h] ??= createFrame(w, h));
+  }
+  /** Is a point in the room near enough to the view to be worth drawing? */
+  near(v, x, m = 90) {
+    return x > v.ox - m && x < v.ox + v.w + m;
+  }
+  drawScene(frame, v) {
     const T = this.t;
     // the wall's decor, the weather's far half, then what lies on the floor
-    for (const d of this.decor) if (d.wall) blit(frame, d.b, d.x, d.y, T + d.off, { flip: d.flip, light: d.light, alpha: d.alpha });
-    this.drawWeather(frame, "back");
+    for (const d of this.decor) if (d.wall && this.near(v, d.x, 120)) blit(frame, d.b, d.x, d.y, T + d.off, { flip: d.flip, light: d.light, alpha: d.alpha });
+    this.drawWeather(frame, "back", v);
     this.fx.drawLayer(frame, "floor");
     this.drawTele(frame);
     this.drawShadows(frame);
     const L = [];
-    for (const e of this.ents) if (!e.hidden) L.push({ d: e.y + (e.dz ?? 0), f: () => e.draw(frame) });
-    for (const d of this.decor) if (!d.wall) L.push({ d: d.depth, f: () => blit(frame, d.b, d.x, d.y, T + d.off, { flip: d.flip, light: d.light, alpha: d.alpha }) });
+    for (const e of this.ents) if (!e.hidden && this.near(v, e.x)) L.push({ d: e.y + (e.dz ?? 0), f: () => e.draw(frame) });
+    for (const d of this.decor) if (!d.wall && this.near(v, d.x, 120)) L.push({ d: d.depth, f: () => blit(frame, d.b, d.x, d.y, T + d.off, { flip: d.flip, light: d.light, alpha: d.alpha }) });
     this.fx.collect(L, frame, "world");
     L.sort((a, b) => a.d - b.d);
     for (const it of L) it.f();
-    this.drawWeather(frame, "front");
+    this.drawWeather(frame, "front", v);
     this.fx.drawLayer(frame, "over");
+    // whatever burst over them, the players stay readable
+    for (const p of this.players) if (!p.hidden && !p.gone && this.near(v, p.x, 40)) p.drawOnTop?.(frame);
   }
   /** Weather is slow and costly: render it at 30 Hz into its own layers and lay those over the frame. */
-  drawWeather(frame, layer) {
+  drawWeather(frame, layer, v = { sx: 0, sy: 0 }) {
     if (!this.weather.length) return;
+    // weather hangs on the screen, not the room: it doesn't scroll
+    const ox = frame.ox, oy = frame.oy;
     // weather on a worker arrives as finished pixels: stamp it straight in
     if (this.weather[0].remote) {
+      frame.ox = v.sx;
+      frame.oy = v.sy;
       for (const w of this.weather) w.draw(frame, layer);
+      frame.ox = ox;
+      frame.oy = oy;
       return;
     }
-    if (!this.wc) this.wc = { back: createFrame(frame.w, frame.h), front: createFrame(frame.w, frame.h), n: -1 };
+    if (!this.wc) this.wc = { back: createFrame(VIEW_W, VIEW_H), front: createFrame(VIEW_W, VIEW_H), n: -1 };
     const c = this.wc, tick = Math.floor(G.time * 30);
     if (layer === "back" && tick !== c.n) {
       c.n = tick;
@@ -213,9 +270,9 @@ export class World {
         w.draw(c.front, "front");
       }
     }
-    const src = c[layer], S = src.color, SL = src.light, D = frame.color, DL = frame.light, n = frame.w * frame.h;
+    const src = c[layer], S = src.color, SL = src.light, D = frame.color, DL = frame.light, FW = frame.w, n = FW * frame.h;
     for (let i = 0; i < n; i++) {
-      const s = S[i];
+      const si = ((((i / FW) | 0) + v.sy) * VIEW_W + (i % FW) + v.sx) | 0, s = S[si];
       if (s) {
         const a = s >>> 24;
         if (a === 255 || !D[i]) D[i] = s;
@@ -224,7 +281,7 @@ export class World {
           D[i] = ((((oa * 255) & 255) << 24) | ((((s >>> 16) & 255) * k + ((d >>> 16) & 255) * (1 - k)) << 16) | ((((s >>> 8) & 255) * k + ((d >>> 8) & 255) * (1 - k)) << 8) | ((s & 255) * k + (d & 255) * (1 - k))) >>> 0;
         }
       }
-      const l = SL[i];
+      const l = SL[si];
       if (l & 0xffffff) {
         const d = DL[i];
         DL[i] = (255 << 24) | (Math.min(255, ((d >>> 16) & 255) + ((l >>> 16) & 255)) << 16) | (Math.min(255, ((d >>> 8) & 255) + ((l >>> 8) & 255)) << 8) | Math.min(255, (d & 255) + (l & 255));
@@ -232,7 +289,7 @@ export class World {
     }
   }
   drawShadows(frame) {
-    const C = frame.color, W = frame.w;
+    const C = frame.color, W = frame.w, OX = frame.ox | 0, OY = frame.oy | 0;
     for (const e of this.ents) {
       if (!e.shadow || e.hidden) continue;
       const k = Math.max(0.4, 1 - (e.z ?? 0) / 90), rx = Math.round(e.shadow * k), ry = Math.max(1, Math.round(rx * 0.3));
@@ -240,8 +297,8 @@ export class World {
       for (let y = -ry; y <= ry; y++)
         for (let x = -rx; x <= rx; x++) {
           if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
-          const px = cx + x, py = cy + y;
-          if (px < 0 || py < FLOOR_TOP - 6 || px >= W || py >= frame.h) continue;
+          const px = cx + x - OX, py = cy + y - OY;
+          if (px < 0 || cy + y < FLOOR_TOP - 6 || py < 0 || px >= W || py >= frame.h) continue;
           const j = py * W + px;
           if (!C[j]) C[j] = SHADOW;
         }
@@ -270,8 +327,8 @@ export class World {
 /** Paint a pixelfx actor's own pixels (a snapshot of a body) with its feet at (X, Y). */
 export function drawActorPixels(frame, a, X, Y, flip, alpha = 1, tint, tintK = 0) {
   const W = frame.w, H = frame.h, C = frame.color, m = a.mask;
-  X = Math.round(X);
-  Y = Math.round(Y);
+  X = Math.round(X) - (frame.ox | 0);
+  Y = Math.round(Y) - (frame.oy | 0);
   for (let my = 0; my < m.h; my++)
     for (let mx = 0; mx < m.w; mx++) {
       const k = my * m.w + mx;

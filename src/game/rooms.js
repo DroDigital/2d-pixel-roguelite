@@ -2,10 +2,10 @@
 // rise when the room falls quiet, and doors that show what waits beyond them.
 
 import { PAL } from "../engine/pfx.js";
-import { G, sfx, rnd, rint, pick, chance, shuffle, weighted, FLOOR_TOP, FLOOR_BOT } from "./ctx.js";
+import { G, sfx, rnd, rint, pick, chance, shuffle, weighted, FLOOR_TOP, FLOOR_BOT, ROOM_W, X_MAX, setRoomWidth, roomMid, viewX } from "./ctx.js";
 import { t } from "./i18n.js";
 import { World } from "./world.js";
-import { PAINTERS } from "./art.js";
+import { PAINTERS, spread } from "./art.js";
 import { makeEnemy, summon, ENEMIES } from "./enemies.js";
 import { Barrel, Hazard, Interactable, Door } from "./props.js";
 import { Pickup } from "./entity.js";
@@ -18,6 +18,8 @@ import { pools } from "../engine/workers.js";
 
 const HOLY_FIRE = ["#2a1c08", "#5a3e10", "#9a6c18", "#d8a428", "#ffd84a", "#fff09a", "#fffbe6", "#ffffff"];
 export const ROOMS_PER_BIOME = 5;
+/** How wide each kind of room is: fights have room to move, wardens a whole hall, quiet rooms a little more than a screen. */
+export const ROOM_WIDTH = { combat: 576, elite: 576, mystery: 512, boss: 672, shop: 448, rest: 448, treasure: 448, shrine: 448 };
 
 /** Every looping effect a realm will stamp: its critters, decor, doors and pickups (for baking ahead of time). */
 export function realmBakes(B) {
@@ -42,8 +44,9 @@ export const BIOMES = [
     a: ["slime", "slime", "bat", "skeleton"], b: ["skeleton", "skull", "cultist", "bat", "slime", "ghost", "ghoul"], elite: ["graveknight"], boss: "hollowking",
     weather: () => (chance(0.6) ? [["weather/fog", { palette: ["#0e0c14", "#1a1724", "#2a2638", "#3e3a52", "#565070", "#7a7494", "#a39cbb", "#d0cce0"] }]] : []),
     decor(w) {
-      for (const x of [28, 160, 292]) w.addDecor("fire/torch", x, 78, {}, { wall: true });
-      for (const x of [72, 88, 232, 248]) w.addDecor("fire/candle", x, FLOOR_TOP - 3, {}, { wall: true });
+      const cols = spread(ROOM_W, 132);
+      for (const x of cols) w.addDecor("fire/torch", x, 68, {}, { wall: true });
+      for (const x of cols.slice(1)) for (const d of [-74, -58]) w.addDecor("fire/candle", x + d, FLOOR_TOP - 3, {}, { wall: true });
     },
     props: () => (chance(0.6) ? [["barrel", {}]] : []),
   },
@@ -53,10 +56,10 @@ export const BIOMES = [
     weather: () => (chance(0.3) ? [["weather/rain", { density: 0.7 }]] : [["weather/fireflies", { palette: ["#0a1f2e", "#0f3d52", "#14707e", "#1fa8a8", "#4fe0c8", "#a8fff0", "#ffffff"] }]]),
     decor(w) {
       w.addDecor("water/waterfall", 46, FLOOR_TOP + 2, { height: 74 }, { wall: true });
-      w.addDecor("water/waterfall", 270, FLOOR_TOP + 2, { height: 74, width: 11 }, { wall: true, flip: true });
-      for (const x of [120, 200]) w.addDecor("water/drip", x, FLOOR_TOP + 2, { height: 56 }, { wall: true });
-      w.addDecor("critters/fish-school", 160, FLOOR_TOP + 4, { palette: PAL.cyber }, { wall: true, alpha: 0.6, light: 0.6 });
-      w.addDecor("water/rain-splash", 230, FLOOR_TOP + 3, {}, { wall: true, alpha: 0.7, fps: 15 });
+      w.addDecor("water/waterfall", ROOM_W - 50, FLOOR_TOP + 2, { height: 74, width: 11 }, { wall: true, flip: true });
+      for (const x of spread(ROOM_W, 90, 120)) w.addDecor("water/drip", x, FLOOR_TOP + 2, { height: 56 }, { wall: true });
+      w.addDecor("critters/fish-school", ROOM_W / 2, FLOOR_TOP + 4, { palette: PAL.cyber }, { wall: true, alpha: 0.6, light: 0.6 });
+      w.addDecor("water/rain-splash", ROOM_W / 2 + 70, FLOOR_TOP + 3, {}, { wall: true, alpha: 0.7, fps: 15 });
     },
     props: () => (chance(0.5) ? [chance(0.5) ? ["hazard", { fx: "nature/toxic-puddle", r: 22, dmg: 1, every: 1, elem: "poison", status: ["poison", 3] }] : ["hazard", { fx: "nature/poison-cloud", opts: { spread: 0.6 }, layer: "world", r: 36, dmg: 1, every: 1.2, elem: "poison", status: ["poison", 3] }]] : []),
   },
@@ -65,7 +68,7 @@ export const BIOMES = [
     a: ["frostslime", "snowbat", "icewisp"], b: ["frostknight", "icewisp", "frostghost", "snowbat", "frostslime", "frostknight"], elite: ["yeti"], boss: "rimequeen",
     weather: (t) => (t === "boss" ? [["weather/blizzard", {}]] : chance(0.5) ? [["weather/aurora", {}], ["weather/snow", {}]] : [["weather/snow", {}]]),
     decor(w) {
-      for (const [x, y] of [[22, 132], [298, 140], [18, 166]]) w.addDecor("ice/ice-crystal", x, y, { height: 24 }, { solid: 8 });
+      for (const [x, y] of [[22, 120], [ROOM_W - 22, 128], [18, 160], [ROOM_W - 26, 166]]) w.addDecor("ice/ice-crystal", x, y, { height: 24 }, { solid: 8 });
     },
     props: () => [],
   },
@@ -75,9 +78,9 @@ export const BIOMES = [
     weather: (t) => (t === "boss" || chance(0.3) ? [["weather/storm", {}]] : []),
     decor(w) {
       w.addDecor("lightning/tesla-coil", 30, FLOOR_TOP + 6, {}, { solid: 10 });
-      w.addDecor("lightning/tesla-coil", 290, FLOOR_TOP + 6, {}, { solid: 10, flip: true });
-      w.addDecor("scifi/energy-core", 160, FLOOR_TOP - 4, {}, { wall: true });
-      for (const x of [96, 224]) w.addDecor("lightning/plasma-ball", x, FLOOR_TOP - 3, {}, { wall: true });
+      w.addDecor("lightning/tesla-coil", ROOM_W - 30, FLOOR_TOP + 6, {}, { solid: 10, flip: true });
+      w.addDecor("scifi/energy-core", ROOM_W / 2, FLOOR_TOP - 4, {}, { wall: true });
+      for (const x of spread(ROOM_W, 128, 96)) if (Math.abs(x - ROOM_W / 2) > 40) w.addDecor("lightning/plasma-ball", x, FLOOR_TOP - 3, {}, { wall: true });
     },
     props: () => [chance(0.6) ? ["barrel", { barrel: ["#1c2230", "#2e3648", "#4a5468", "#e8a218", "#ffd23c"] }] : null, chance(0.4) ? ["hazard", { fx: "scifi/laser-grid", r: 24, dmg: 1, every: 0.6, elem: "fire", active: (t) => t % 3 < 1.8 }] : null].filter(Boolean),
   },
@@ -86,10 +89,10 @@ export const BIOMES = [
     a: ["holywisp", "butterfly", "seraph"], b: ["seraph", "archer", "priest", "holywisp", "butterfly", "lasher"], elite: ["paladin"], boss: "seraph",
     weather: () => [chance(0.5) ? ["weather/god-rays", {}] : ["weather/clouds", {}], chance(0.5) ? ["weather/cherry-blossoms", {}] : ["weather/falling-leaves", {}]],
     decor(w) {
-      for (const x of [40, 280]) w.addDecor("fire/brazier", x, FLOOR_TOP + 10, { palette: HOLY_FIRE }, { solid: 9 });
-      w.addDecor("holy/sunburst", 160, 46, {}, { wall: true, alpha: 0.8, light: 0.8 });
-      w.addDecor("critters/butterfly", 70, 70, {}, { wall: true });
-      w.addDecor("critters/bird", 250, 40, {}, { wall: true });
+      for (const x of [40, ROOM_W - 40]) w.addDecor("fire/brazier", x, FLOOR_TOP + 10, { palette: HOLY_FIRE }, { solid: 9 });
+      w.addDecor("holy/sunburst", ROOM_W / 2, 40, {}, { wall: true, alpha: 0.8, light: 0.8 });
+      w.addDecor("critters/butterfly", 70, 60, {}, { wall: true });
+      w.addDecor("critters/bird", ROOM_W - 70, 34, {}, { wall: true });
     },
     props: () => (chance(0.25) ? [["hazard", { fx: "nature/tornado", opts: { height: 78 }, layer: "world", r: 18, dmg: 1, every: 1, follow: 14, life: 9999 }]] : []),
   },
@@ -166,32 +169,35 @@ export class Room {
   build(players) {
     if (!Array.isArray(players)) players = [players];
     const player = players[0];
+    setRoomWidth(ROOM_WIDTH[this.type] ?? 576);
     const w = (G.world = new World()), B = this.biome, run = this.run;
-    PAINTERS[B.paint](G.screen.bg, run.biome * 7 + run.room * 13 + 1);
+    PAINTERS[B.paint](G.screen.backdrop(ROOM_W), run.biome * 7 + run.room * 13 + 1);
     B.decor(w);
     // bake what this realm will need now, while the transition covers the screen
     if (!pools.current) for (const [id, o, fps] of realmBakes(B)) bake(id, o, fps);
     for (const [id, o] of B.weather(this.type)) w.addWeather(id, o);
     w.player = player;
     w.party = players;
+    // everyone drops in at the left of the room, the way on lies ahead; a warden's hall puts you near its middle
+    const x0 = this.type === "boss" ? ROOM_W / 2 - 120 : 40;
     players.forEach((p, i) => {
       w.add(p);
-      Object.assign(p, { x: 40 + (i % 2) * 18, y: 134 + i * 11, facing: 1, z: 70 + i * 12, vz: -40, perf: null, dashT: -1, st: {}, locked: false, hidden: false, gone: false });
+      Object.assign(p, { x: x0 + (i % 2) * 18, y: 124 + i * 12, facing: 1, z: 70 + i * 12, vz: -40, perf: null, dashT: -1, st: {}, locked: false, hidden: false, gone: false });
       // what belonged to the last room's world goes with it
       Object.assign(p, { ward: null, aegisFx: null, fieldFx: null, ballTick: null, skullTick: null, interactable: null });
     });
     const lvl = this.lvl = 1 + run.biome * 1.6 + run.room * 0.35;
     if (["combat", "elite"].includes(this.type)) {
-      for (const [kind, o] of B.props()) {
-        const x = rnd(110, 280), y = rnd(FLOOR_TOP + 10, FLOOR_BOT - 6);
+      for (const [kind, o] of [...B.props(), ...B.props()]) {
+        const x = rnd(120, ROOM_W - 40), y = rnd(FLOOR_TOP + 10, FLOOR_BOT - 6);
         if (kind === "barrel") w.add(new Barrel(x, y, o));
         else w.add(new Hazard(x, y, o));
       }
       this.planWaves(lvl);
     }
     this.setupSpecial(w, player);
-    for (const p of run.alive()) for (const b of run.boons) b.room?.(run, p);
-    for (const f of run.hooks.onRoomStart) f(run, player);
+    for (const p of run.alive()) for (const b of p.bd.boons) b.room?.(p.bd, p);
+    for (const p of players) for (const f of p.bd.hooks.onRoomStart) f(p.bd, p);
     sfx("door", 0.6);
     if (B.id === "foundry" && this.type !== "boss") w.after(0.8, () => w.spawnFx("scifi/scanner", player.x, player.y, { actor: player.snapshot() }, { follow: player, prio: 1, life: 2.4 }));
     G.audio.music(this.type === "boss" ? (run.biome === 4 ? "final" : "boss") : B.music);
@@ -225,9 +231,10 @@ export class Room {
     const wave = this.waves.shift(), w = G.world;
     wave.forEach((o, i) => {
       let x, y, tries = 0;
-      // somewhere no one is standing
+      // somewhere no one is standing, around someone in the party, so a fight finds you wherever you are
+      const live = w.livePlayers(), near = live.length ? live[i % live.length] : w.player;
       do {
-        x = rnd(40, 290);
+        x = Math.max(40, Math.min(X_MAX - 26, (near?.x ?? 160) + (chance(0.5) ? 1 : -1) * rnd(70, 210)));
         y = rnd(FLOOR_TOP + 6, FLOOR_BOT - 4);
       } while (w.players.some((p) => Math.hypot(x - p.x, (y - p.y) * 2) < 70) && tries++ < 30);
       const e = makeEnemy(o.id, x, y, this.lvl, o.elite);
@@ -275,14 +282,14 @@ export class Room {
     // the fallen get back up when the room falls quiet
     // (the fallen, who bled out, stay down until someone pays to raise them)
     for (const q of run.players) if (q.down && !q.fallen) q.revive(Math.ceil(q.maxHp / 3));
-    for (const f of run.hooks.onRoomClear) f(run, p);
+    for (const q of run.players) for (const f of q.bd.hooks.onRoomClear) f(q.bd, q);
     w.slowmo(0.35, 0.5);
     sfx("clear");
     G.hud.ribbon(this.type === "boss" ? "WARDEN FALLEN" : "ROOM CLEARED");
     w.after(1.0, () => this.giveReward());
   }
   giveReward() {
-    const w = G.world, run = this.run, s = this.spec, x = 160, y = 146;
+    const w = G.world, run = this.run, s = this.spec, x = (this.exitX = this.partyX()), y = 140;
     const kind = this.type === "elite" ? "boon+" : this.type === "combat" ? s.reward.kind : null;
     if (!kind) return this.openDoors();
     w.spawnFx("pickups/loot-beam", x, y, kind === "boon+" ? { palette: PAL.gold } : {}, { life: 2.2, prio: 1 });
@@ -302,8 +309,14 @@ export class Room {
       for (let i = 0; i < 5 + run.biome; i++) w.add(new Pickup({ x, y, z: 20, vx: rnd(-70, 70), vy: rnd(-30, 30), vz: rnd(90, 150), ...ember() }));
       done();
     } else if (kind === "ult") {
-      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/xp-orb", magnet: 0, delay: 0.6, onTake: () => { run.stats.ultGain *= 1.1; run.each((p) => { p.ult = 100; G.world.spawnFx("arcane/mana-burst", p.x, p.y, {}, { prio: 2 }); }); sfx("powerup"); done(); } }));
+      w.add(new Pickup({ x, y, z: 30, vz: 60, fxId: "pickups/xp-orb", magnet: 0, delay: 0.6, onTake: () => { for (const b of run.builds) b.stats.ultGain *= 1.1; run.each((p) => { p.ult = 100; G.world.spawnFx("arcane/mana-burst", p.x, p.y, {}, { prio: 2 }); }); sfx("powerup"); done(); } }));
     }
+  }
+  /** Where the party stands (the middle of who's still up), kept clear of the room's ends: rewards and doors rise there. */
+  partyX() {
+    const L = G.world.livePlayers(), ps = L.length ? L : G.world.players;
+    const x = ps.length ? ps.reduce((s, p) => s + p.x, 0) / ps.length : roomMid();
+    return Math.max(140, Math.min(ROOM_W - 140, x));
   }
   openDoors() {
     if (this.doorsOpen) return;
@@ -313,11 +326,11 @@ export class Room {
       // onward and upward
       const last = run.biome >= BIOMES.length - 1;
       if (last) return G.scene.victory();
-      const d = new Door(270, FLOOR_TOP + 14, { type: "ascend", label: "ASCEND", palette: PAL.fire }, { fx: "pickups/power-star", opts: { palette: PAL.fire } });
+      const d = new Door(Math.max(60, Math.min(ROOM_W - 60, this.partyX() + 90)), FLOOR_TOP + 14, { type: "ascend", label: "ASCEND", palette: PAL.fire }, { fx: "pickups/power-star", opts: { palette: PAL.fire } });
       w.add(d);
       return;
     }
-    const choices = nextChoices(run), n = choices.length, xs = n === 1 ? [160] : n === 2 ? [110, 210] : [80, 160, 240];
+    const cx = this.exitX ?? this.partyX(), choices = nextChoices(run), n = choices.length, xs = (n === 1 ? [0] : n === 2 ? [-60, 60] : [-100, 0, 100]).map((d) => cx + d);
     choices.forEach((c, i) => w.add(new Door(xs[i], FLOOR_TOP + 14, { ...c, palette: c.palette ?? this.biome.door }, c.icon)));
     sfx("portal");
   }
@@ -335,10 +348,10 @@ export class Room {
 
   // ---- the rooms that aren't fights
   setupSpecial(w, p) {
-    const run = this.run, type = this.type;
+    const run = this.run, type = this.type, M = ROOM_W / 2;
     if (type === "combat" || type === "elite") return;
     if (type === "boss") {
-      const boss = (this.boss = makeBoss(this.biome.boss, 240, 148, run));
+      const boss = (this.boss = makeBoss(this.biome.boss, ROOM_W / 2 + 70, 140, run));
       G.hud.boss = boss;
       p.locked = true;
       w.after(0.6, () => {
@@ -355,54 +368,54 @@ export class Room {
     }
     const later = () => w.after(0.6, () => this.openDoors());
     if (type === "treasure") {
-      const chest = new Interactable(160, 146, { fx: null, prompt: "OPEN THE CHEST", shadow: 0 });
+      const chest = new Interactable(M, 146, { fx: null, prompt: "OPEN THE CHEST", shadow: 0 });
       chest.chestB = null;
       chest.interact = () => {
         chest.used = true;
-        w.spawnFx("pickups/chest-open", 160, 146, { coins: 14 }, { prio: 2 });
+        w.spawnFx("pickups/chest-open", M, 146, { coins: 14 }, { prio: 2 });
         sfx("chest");
         w.after(0.9, () => {
-          for (let i = 0; i < 20 + run.biome * 5; i++) w.add(new Pickup({ x: 160, y: 146, z: 16, vx: rnd(-100, 100), vy: rnd(-35, 35), vz: rnd(100, 170), ...coin(2) }));
-          for (let i = 0; i < 2 + rint(0, 2); i++) w.add(new Pickup({ x: 160, y: 146, z: 16, vx: rnd(-80, 80), vy: rnd(-30, 30), vz: rnd(100, 160), ...ember() }));
+          for (let i = 0; i < 20 + run.biome * 5; i++) w.add(new Pickup({ x: M, y: 146, z: 16, vx: rnd(-100, 100), vy: rnd(-35, 35), vz: rnd(100, 170), ...coin(2) }));
+          for (let i = 0; i < 2 + rint(0, 2); i++) w.add(new Pickup({ x: M, y: 146, z: 16, vx: rnd(-80, 80), vy: rnd(-30, 30), vz: rnd(100, 160), ...ember() }));
           if (chance(0.5)) G.scene.openBoons(null, 0, later);
           else later();
         });
       };
-      chest.drawExtra = (f) => !chest.used && G.scene.drawStill(f, "pickups/chest-open", 160, 146);
+      chest.drawExtra = (f) => !chest.used && G.scene.drawStill(f, "pickups/chest-open", M, 146);
       this.interactables.push(w.add(chest));
       this.fighting = false;
     } else if (type === "rest") {
-      w.addDecor("fire/campfire", 160, 146, {}, { solid: 10 });
-      const fire = new Interactable(160, 150, { prompt: "REST BY THE FIRE (HEAL HALF)" });
+      w.addDecor("fire/campfire", M, 146, {}, { solid: 10 });
+      const fire = new Interactable(M, 150, { prompt: "REST BY THE FIRE (HEAL HALF)" });
       fire.interact = () => {
         fire.used = true;
         run.each((q) => q.heal(Math.ceil(q.maxHp / 2)));
         w.spawnFx("nature/healing-bloom", p.x, p.y, {}, { prio: 2 });
-        w.spawnFx("holy/heal-aoe", 160, 150, {}, { prio: 2 });
+        w.spawnFx("holy/heal-aoe", M, 150, {}, { prio: 2 });
         G.hud.toast("RESTED", "THE EMBER BURNS BRIGHTER", PAL.fire);
         later();
       };
       this.interactables.push(w.add(fire));
-      const train = new Interactable(100, 156, { fx: "pickups/power-star", opts: { palette: PAL.blood }, prompt: "TEMPER INSTEAD (+12% DAMAGE)", label: "TEMPER", labelY: 6 });
+      const train = new Interactable(M - 60, 156, { fx: "pickups/power-star", opts: { palette: PAL.blood }, prompt: "TEMPER INSTEAD (+12% DAMAGE)", label: "TEMPER", labelY: 6 });
       train.interact = () => {
         train.used = fire.used = true;
-        run.stats.dmg *= 1.12;
+        for (const b of run.builds) b.stats.dmg *= 1.12;
         w.spawnFx("ui/level-up", p.x, p.y, { text: "TEMPERED", actor: p.snapshot() }, { follow: p, prio: 2 });
         sfx("powerup");
         later();
       };
       this.interactables.push(w.add(train));
     } else if (type === "shop") {
-      w.addDecor("scifi/hologram", 160, 132, { palette: PAL.ember }, {});
+      w.addDecor("scifi/hologram", M, 132, { palette: PAL.ember }, {});
       const items = [
         { name: "VIAL OF EMBERS (HEAL 2 HEARTS)", price: 25, fx: "pickups/potion", opts: {}, buy: (it, b) => b.heal(4) },
         { name: "HEART VESSEL (+1 MAX HEART)", price: 55, fx: "pickups/heart-pickup", opts: REWARD_ICON.heart().opts, buy: (it, b) => { b.maxHp += 2; b.heal(2, true); } },
-        { name: "A BOON OF YOUR CHOOSING", price: 70, fx: "pickups/power-star", opts: { palette: PAL.gold }, buy: (it) => G.scene.openBoons(null, 1) },
+        { name: "A BOON OF YOUR CHOOSING", price: 70, fx: "pickups/power-star", opts: { palette: PAL.gold }, buy: (it, b) => G.scene.openBoons(null, 1, null, b) },
         { name: "FOCUS SHARD (FILL ULTIMATE)", price: 30, fx: "pickups/xp-orb", opts: {}, buy: (it, b) => (b.ult = 100) },
         { name: "AEGIS CHARM (+2 SHIELDS)", price: 40, fx: "pickups/crystal-shard", opts: { palette: PAL.ice }, buy: (it, b) => (b.shield += 2) },
       ];
       shuffle(items).slice(0, 4).forEach((it, i) => {
-        const x = 70 + i * 60, price = Math.round(it.price * (1 + run.biome * 0.15));
+        const x = M - 90 + i * 60, price = Math.round(it.price * (1 + run.biome * 0.15));
         const o = new Interactable(x, 158, { fx: it.fx, opts: it.opts, prompt: t("BUY {0} - {1}G", it.name, price), price, yoff: -8 });
         o.interact = (buyer = p) => {
           if (run.coins < price) {
@@ -422,35 +435,35 @@ export class Room {
       });
       this.openDoors();
     } else if (type === "shrine") {
-      w.spawnFx("arcane/rune-circle", 160, 150, { palette: PAL.blood }, { layer: "floor", prio: 2 });
-      const sh = new Interactable(160, 150, { fx: "pickups/crystal-shard", opts: { palette: PAL.blood }, yoff: -26, prompt: "OFFER A HEART FOR A RARE BOON" });
+      w.spawnFx("arcane/rune-circle", M, 150, { palette: PAL.blood }, { layer: "floor", prio: 2 });
+      const sh = new Interactable(M, 150, { fx: "pickups/crystal-shard", opts: { palette: PAL.blood }, yoff: -26, prompt: "OFFER A HEART FOR A RARE BOON" });
       sh.interact = (b = p) => {
         if (b.maxHp <= 2) return sfx("nope");
         sh.used = true;
         b.maxHp -= 2;
         b.hp = Math.min(b.hp, b.maxHp);
         w.spawnFx("shadow/curse", b.x, b.y, { actor: b.snapshot() }, { follow: b, prio: 2 });
-        w.spawnFx("shadow/hex-sigil", 160, 150, {}, { layer: "floor", prio: 2 });
+        w.spawnFx("shadow/hex-sigil", M, 150, {}, { layer: "floor", prio: 2 });
         sfx("dark");
-        w.after(1.2, () => G.scene.openBoons(null, 2, later));
+        w.after(1.2, () => G.scene.openBoons(null, 2, later, b));
       };
       this.interactables.push(w.add(sh));
-      const leave = new Interactable(250, 156, { prompt: "WALK AWAY", label: "LEAVE" });
+      const leave = new Interactable(M + 90, 156, { prompt: "WALK AWAY", label: "LEAVE" });
       leave.interact = () => { leave.used = sh.used = true; later(); };
       this.interactables.push(w.add(leave));
     } else if (type === "mystery") {
       const roll = pick(["egg", "fountain", "fireworks", "ambush"]);
-      w.addDecor("arcane/arcane-orb", 40, FLOOR_TOP + 10, { palette: PAL.neon }, {});
-      w.addDecor("arcane/arcane-orb", 280, FLOOR_TOP + 10, { palette: PAL.neon }, { flip: true });
+      w.addDecor("arcane/arcane-orb", M - 120, FLOOR_TOP + 10, { palette: PAL.neon }, {});
+      w.addDecor("arcane/arcane-orb", M + 120, FLOOR_TOP + 10, { palette: PAL.neon }, { flip: true });
       if (roll === "egg") {
-        const egg = new Interactable(160, 150, { prompt: "TOUCH THE EGG" });
-        egg.drawExtra = (f) => !egg.used && G.scene.drawStill(f, "spawn/egg-hatch", 160, 150);
+        const egg = new Interactable(M, 150, { prompt: "TOUCH THE EGG" });
+        egg.drawExtra = (f) => !egg.used && G.scene.drawStill(f, "spawn/egg-hatch", M, 150);
         egg.interact = () => {
           egg.used = true;
-          w.spawnFx("spawn/egg-hatch", 160, 150, {}, { prio: 2 });
+          w.spawnFx("spawn/egg-hatch", M, 150, {}, { prio: 2 });
           w.after(1.6, () => {
             if (chance(0.5)) {
-              for (let i = 0; i < 12; i++) w.add(new Pickup({ x: 160, y: 150, z: 10, vx: rnd(-90, 90), vy: rnd(-30, 30), vz: rnd(80, 140), ...ember() }));
+              for (let i = 0; i < 12; i++) w.add(new Pickup({ x: M, y: 150, z: 10, vx: rnd(-90, 90), vy: rnd(-30, 30), vz: rnd(80, 140), ...ember() }));
               G.hud.toast("A GIFT", "EMBERS SPILL OUT", PAL.fire);
               later();
             } else {
@@ -466,18 +479,18 @@ export class Room {
         };
         this.interactables.push(w.add(egg));
       } else if (roll === "fountain") {
-        w.addDecor("water/fountain", 160, 146, {}, { solid: 12 });
-        const f = new Interactable(160, 150, { prompt: "DRINK FROM THE FOUNTAIN" });
+        w.addDecor("water/fountain", M, 146, {}, { solid: 12 });
+        const f = new Interactable(M, 150, { prompt: "DRINK FROM THE FOUNTAIN" });
         f.interact = () => { f.used = true; run.each((q) => { q.heal(q.maxHp); q.ult = 100; }); w.spawnFx("water/splash", p.x, p.y, {}, { prio: 2 }); G.hud.toast("REFRESHED", "HEARTS AND FOCUS RESTORED", PAL.water); later(); };
         this.interactables.push(w.add(f));
       } else if (roll === "fireworks") {
         G.hud.toast("A CELEBRATION", "FOR NO REASON AT ALL", PAL.candy);
-        for (let i = 0; i < 3; i++) w.after(1 + i * 0.9, () => w.spawnFx("explosions/firework-burst", rnd(70, 250), 60, { palette: pick([PAL.candy, PAL.neon, PAL.gold]) }, { prio: 1, layer: "over" }));
-        for (let i = 0; i < 4; i++) w.after(0.6 + i * 0.7, () => { w.spawnFx("explosions/firework-rocket", rnd(60, 260), 170, { tips: pick([PAL.candy, PAL.neon, PAL.gold]) }, { prio: 1 }); sfx("boom", 0.4, 1.8); });
-        w.after(3.4, () => { w.spawnFx("ui/confetti", 160, 140, {}, { prio: 2, layer: "over" }); for (let i = 0; i < 24; i++) w.add(new Pickup({ x: rnd(80, 240), y: rnd(130, 165), z: 60, vz: 0, ...coin(2) })); later(); });
+        for (let i = 0; i < 3; i++) w.after(1 + i * 0.9, () => w.spawnFx("explosions/firework-burst", viewX(rnd(70, 250)), 60, { palette: pick([PAL.candy, PAL.neon, PAL.gold]) }, { prio: 1, layer: "over" }));
+        for (let i = 0; i < 4; i++) w.after(0.6 + i * 0.7, () => { w.spawnFx("explosions/firework-rocket", viewX(rnd(60, 260)), 170, { tips: pick([PAL.candy, PAL.neon, PAL.gold]) }, { prio: 1 }); sfx("boom", 0.4, 1.8); });
+        w.after(3.4, () => { w.spawnFx("ui/confetti", viewX(160), 140, {}, { prio: 2, layer: "over" }); for (let i = 0; i < 24; i++) w.add(new Pickup({ x: viewX(rnd(80, 240)), y: rnd(120, 165), z: 60, vz: 0, ...coin(2) })); later(); });
       } else {
         G.hud.toast("AMBUSH", "A CHAMPION BARS THE WAY", PAL.blood);
-        w.spawnFx("projectiles/flare", 260, 160, {}, { prio: 2 });
+        w.spawnFx("projectiles/flare", M + 100, 160, {}, { prio: 2 });
         this.type = "elite";
         this.planWaves(1 + run.biome * 1.6 + run.room * 0.35);
         this.waves = this.waves.slice(-1);
