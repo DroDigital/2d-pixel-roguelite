@@ -448,4 +448,9 @@ export default {
   "SAND OF AGES": "岁月之沙",
   "THE ULTIMATE FILLS 50% FASTER AND YOUR DASH RECHARGES 30% FASTER.": "终极技充能加快50%，冲刺冷却加快30%。",
   "RELIC!": "遗物！",
+  "HEAL HALF YOUR HEARTS": "恢复一半的心",
+  "+12% DAMAGE": "伤害+12%",
+  "OR": "或",
+  "A QUIET FIRE": "宁静的篝火",
+  "REST OR TEMPER: ONLY ONE": "休息或淬炼：只能选一个",
 };
