@@ -448,4 +448,9 @@ export default {
   "SAND OF AGES": "時の砂",
   "THE ULTIMATE FILLS 50% FASTER AND YOUR DASH RECHARGES 30% FASTER.": "必殺技が50%早くたまり、ダッシュの回復が30%早まる。",
   "RELIC!": "遺物！",
+  "HEAL HALF YOUR HEARTS": "ハートを半分回復",
+  "+12% DAMAGE": "ダメージ+12%",
+  "OR": "または",
+  "A QUIET FIRE": "静かな焚き火",
+  "REST OR TEMPER: ONLY ONE": "休むか鍛えるか：どちらか一つ",
 };

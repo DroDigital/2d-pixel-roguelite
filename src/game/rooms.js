@@ -1,7 +1,7 @@
 // The spire's five realms and the rooms you fight through: waves summoned in each realm's own way, rewards that
 // rise when the room falls quiet, and doors that show what waits beyond them.
 
-import { PAL } from "../engine/pfx.js";
+import { PAL, hex, painterFor } from "../engine/pfx.js";
 import { G, sfx, rnd, rint, pick, chance, shuffle, weighted, FLOOR_TOP, FLOOR_BOT, ROOM_W, X_MAX, setRoomWidth, roomMid, viewX } from "./ctx.js";
 import { t } from "./i18n.js";
 import { World } from "./world.js";
@@ -398,26 +398,44 @@ export class Room {
       this.interactables.push(w.add(chest));
       this.fighting = false;
     } else if (type === "rest") {
-      w.addDecor("fire/campfire", M, 146, {}, { solid: 10 });
-      const fire = new Interactable(M, 150, { prompt: "REST BY THE FIRE (HEAL HALF)" });
-      fire.interact = () => {
-        fire.used = true;
-        run.each((q) => q.heal(Math.ceil(q.maxHp / 2)));
-        w.spawnFx("nature/healing-bloom", p.x, p.y, {}, { prio: 2 });
-        w.spawnFx("holy/heal-aoe", M, 150, {}, { prio: 2 });
-        G.hud.toast("RESTED", "THE EMBER BURNS BRIGHTER", PAL.fire);
+      // one choice, two sides of the room: rest by the fire, or temper at the star; taking one puts out the other
+      const FX = M - 46, TX = M + 46, LY = FLOOR_TOP + 2;
+      const camp = w.addDecor("fire/campfire", FX, 146, {}, { solid: 10 });
+      const fire = new Interactable(FX, 150, { prompt: "REST BY THE FIRE (HEAL HALF)", label: "REST", sub: () => t("HEAL HALF YOUR HEARTS"), fade: true, labelY: LY - 150 });
+      const train = new Interactable(TX, 150, { fx: "pickups/power-star", opts: { palette: PAL.blood }, yoff: -10, prompt: "TEMPER INSTEAD (+12% DAMAGE)", label: "TEMPER", sub: () => t("+12% DAMAGE"), fade: true, labelY: LY - 150 });
+      const or = w.add(new Interactable(M, 150, { label: "OR", labelY: LY - 150 + 4, shadow: 0 }));
+      // the way between them, marked on the floor: a choice, not two gifts
+      or.drawExtra = (f) => {
+        if (fire.used) return;
+        const pt = painterFor(f), c = hex("#6a6088") >>> 0;
+        for (let y = 128; y < 168; y += 4) pt.rect(M, y, 1, 2, c);
+      };
+      const choose = (took) => {
+        fire.used = train.used = true;
+        or.label = null;
+        const gone = took === fire ? train : fire;
+        w.spawnFx("spawn/poof", gone.x, gone.y - 8, {}, { prio: 2 });
+        if (gone === fire) {
+          // the fire goes out: tempering takes its heat
+          w.decor.splice(w.decor.indexOf(camp), 1);
+        }
         later();
       };
-      this.interactables.push(w.add(fire));
-      const train = new Interactable(M - 60, 156, { fx: "pickups/power-star", opts: { palette: PAL.blood }, prompt: "TEMPER INSTEAD (+12% DAMAGE)", label: "TEMPER", labelY: 6 });
+      fire.interact = () => {
+        choose(fire);
+        run.each((q) => q.heal(Math.ceil(q.maxHp / 2)));
+        w.spawnFx("nature/healing-bloom", p.x, p.y, {}, { prio: 2 });
+        w.spawnFx("holy/heal-aoe", FX, 150, {}, { prio: 2 });
+        G.hud.toast("RESTED", "THE EMBER BURNS BRIGHTER", PAL.fire);
+      };
       train.interact = () => {
-        train.used = fire.used = true;
+        choose(train);
         for (const b of run.builds) b.stats.dmg *= 1.12;
         w.spawnFx("ui/level-up", p.x, p.y, { text: "TEMPERED", actor: p.snapshot() }, { follow: p, prio: 2 });
         sfx("powerup");
-        later();
       };
-      this.interactables.push(w.add(train));
+      this.interactables.push(w.add(fire), w.add(train));
+      G.hud.title("A QUIET FIRE", "REST OR TEMPER: ONLY ONE", 3);
     } else if (type === "shop") {
       w.addDecor("scifi/hologram", M, 132, { palette: PAL.ember }, {});
       const items = [
